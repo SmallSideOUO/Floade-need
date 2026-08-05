@@ -1,0 +1,32 @@
+{
+  "name": "floade-local-data",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Link local folders to private GitHub repositories and push from the system tray.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SmallSideOUO/Floade-need.git"
+  },
+  "homepage": "https://github.com/SmallSideOUO/Floade-need#readme",
+  "keywords": [
+    "git",
+    "github",
+    "system-tray",
+    "local-first",
+    "electron"
+  ],
+  "main": "src/main.mjs",
+  "bin": {
+    "floade": "bin/floade.mjs"
+  },
+  "scripts": {
+    "start": "node bin/floade.mjs",
+    "start:foreground": "electron . --foreground",
+    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js"
+  },
+  "dependencies": {
+    "electron": "43.3.0"
+  }
+}

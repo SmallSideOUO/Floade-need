@@ -1,0 +1,64 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+body { padding: 8px; }
+
+.toast {
+  position: relative;
+  display: flex;
+  height: 100%;
+  align-items: center;
+  gap: 12px;
+  overflow: hidden;
+  padding: 14px 16px 17px;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 14px;
+  background: #111113;
+}
+
+.status {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #56c58b;
+}
+
+.toast.error .status { background: #ef735f; }
+.toast.loading .status { background: #6da8ff; }
+
+.content { display: flex; min-width: 0; flex-direction: column; gap: 3px; }
+strong { color: #f7f7f8; font-size: 13px; font-weight: 650; }
+span { overflow: hidden; color: #9999a1; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+
+.progress {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 3px;
+  background: #56c58b;
+  transform-origin: left;
+  animation: countdown var(--duration, 2500ms) linear forwards;
+}
+
+.toast.error .progress { background: #ef735f; }
+.toast.loading .progress {
+  width: 42%;
+  background: #6da8ff;
+  animation: processing 1.1s ease-in-out infinite;
+}
+
+@keyframes countdown {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+@keyframes processing {
+  from { transform: translateX(-110%); }
+  to { transform: translateX(340%); }
+}

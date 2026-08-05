@@ -1,0 +1,110 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body { padding: 10px; }
+
+.dialog {
+  height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: #111113;
+}
+
+header {
+  display: flex;
+  height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 13px 0 16px;
+  color: #b7b7bd;
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-app-region: drag;
+}
+
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand img { width: 18px; height: 18px; object-fit: contain; }
+
+.close {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #92929a;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.close:hover { background: #26262b; color: #f4f4f5; }
+
+section { padding: 5px 20px 20px; }
+
+h1 {
+  margin: 0 0 14px;
+  color: #f7f7f8;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid #34343a;
+  border-radius: 10px;
+  outline: none;
+  background: #1b1b1f;
+  color: #f0f0f2;
+  font: inherit;
+  font-size: 13px;
+}
+
+input:focus { border-color: #696972; }
+
+.repositories {
+  height: 330px;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.repo {
+  display: block;
+  width: 100%;
+  padding: 11px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: #dedee2;
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.repo:hover, .repo:focus-visible {
+  outline: none;
+  background: #242429;
+  color: #fff;
+}
+
+.empty { padding: 28px 12px; color: #777780; font-size: 13px; text-align: center; }
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { border-radius: 999px; background: #35353b; }

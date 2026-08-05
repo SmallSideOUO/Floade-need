@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>從 Floade 移除</title>
+    <link rel="stylesheet" href="./delete-dialog.css">
+  </head>
+  <body>
+    <main class="dialog" role="dialog" aria-modal="true" aria-labelledby="title">
+      <header>
+        <img src="../assets/tray.png" alt="">
+        <span>Floade</span>
+      </header>
+
+      <section>
+        <h1 id="title">移除這個資料夾？</h1>
+        <p id="folder" class="folder"></p>
+        <p class="note">只會從 Floade 選單移除，本機檔案不會被刪除。</p>
+      </section>
+
+      <footer>
+        <button id="cancel" class="secondary" type="button">取消</button>
+        <button id="delete" class="danger" type="button">移除</button>
+      </footer>
+    </main>
+    <script src="./delete-dialog.js"></script>
+  </body>
+</html>
