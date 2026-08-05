@@ -25,6 +25,11 @@ if (!app.requestSingleInstanceLock()) {
   const previewWindows = new Map()
   const previewFiles = new Map()
 
+  function windowIconPath() {
+    const iconFile = process.platform === 'win32' ? 'tray.ico' : 'tray.png'
+    return path.join(app.getAppPath(), 'assets', iconFile)
+  }
+
   function loadFolders() {
     try {
       const config = JSON.parse(fs.readFileSync(configFile, 'utf8'))
@@ -50,6 +55,7 @@ if (!app.requestSingleInstanceLock()) {
       const window = new BrowserWindow({
         width: 430,
         height: 230,
+        icon: windowIconPath(),
         frame: false,
         transparent: true,
         resizable: false,
@@ -93,6 +99,7 @@ if (!app.requestSingleInstanceLock()) {
     const window = new BrowserWindow({
       width: 370,
       height: 96,
+      icon: windowIconPath(),
       frame: false,
       transparent: true,
       resizable: false,
@@ -135,6 +142,7 @@ if (!app.requestSingleInstanceLock()) {
       const window = new BrowserWindow({
         width: 520,
         height: 480,
+        icon: windowIconPath(),
         frame: false,
         transparent: true,
         resizable: false,
@@ -219,6 +227,7 @@ if (!app.requestSingleInstanceLock()) {
     const window = new BrowserWindow({
       width: 480,
       height: 560,
+      icon: windowIconPath(),
       minWidth: 320,
       minHeight: 260,
       frame: false,
@@ -337,6 +346,7 @@ if (!app.requestSingleInstanceLock()) {
     const window = new BrowserWindow({
       width: 540,
       height: 550,
+      icon: windowIconPath(),
       frame: false,
       transparent: true,
       resizable: false,
@@ -651,6 +661,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {})
 
   app.whenReady().then(() => {
+    if (process.platform === 'win32') app.setAppUserModelId('com.floade.local-data')
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
     registerPreviewHandlers()
