@@ -1,0 +1,188 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body { padding: 10px; }
+
+.dialog {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: #111113;
+}
+
+header {
+  display: flex;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 13px 0 16px;
+  color: #b7b7bd;
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-app-region: drag;
+}
+
+.brand, .window-actions { display: flex; align-items: center; }
+.brand { gap: 8px; }
+.brand img { width: 18px; height: 18px; object-fit: contain; }
+.window-actions { gap: 3px; -webkit-app-region: no-drag; }
+
+.icon-button, .close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #92929a;
+  cursor: pointer;
+}
+
+.icon-button svg { width: 16px; height: 16px; fill: currentColor; }
+.icon-button:hover, .icon-button.active { background: #26262b; color: #f4f4f5; }
+.icon-button.active { color: #78aef8; }
+.close { font-size: 20px; line-height: 1; }
+.close:hover { background: #26262b; color: #f4f4f5; }
+
+section {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  padding: 5px 20px 0;
+}
+
+h1 {
+  margin: 0 0 5px;
+  color: #f7f7f8;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.folder {
+  overflow: hidden;
+  margin: 0 0 13px;
+  color: #85858d;
+  font-family: "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input {
+  width: 100%;
+  height: 38px;
+  flex: 0 0 auto;
+  padding: 0 12px;
+  border: 1px solid #34343a;
+  border-radius: 10px;
+  outline: none;
+  background: #1b1b1f;
+  color: #f0f0f2;
+  font: inherit;
+  font-size: 13px;
+}
+
+input:focus { border-color: #696972; }
+
+.files {
+  min-height: 0;
+  flex: 1;
+  margin-top: 10px;
+  overflow-y: auto;
+}
+
+.file {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 11px;
+  border-radius: 9px;
+  color: #dedee2;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.file:hover { background: #242429; color: #fff; }
+.file input { display: none; }
+
+.checkbox {
+  display: grid;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid #45454d;
+  border-radius: 5px;
+  background: #19191d;
+}
+
+.checkbox::after {
+  width: 8px;
+  height: 4px;
+  border-bottom: 2px solid #111113;
+  border-left: 2px solid #111113;
+  content: "";
+  opacity: 0;
+  transform: translateY(-1px) rotate(-45deg);
+}
+
+.file input:checked + .checkbox { border-color: #78aef8; background: #78aef8; }
+.file input:checked + .checkbox::after { opacity: 1; }
+.path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.empty { padding: 36px 12px; color: #777780; font-size: 13px; text-align: center; }
+
+footer {
+  display: flex;
+  min-height: 64px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 20px 16px;
+}
+
+#selection-count { color: #85858d; font-size: 12px; }
+
+.primary {
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid #78aef8;
+  border-radius: 9px;
+  background: #78aef8;
+  color: #0c1624;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.primary:hover:not(:disabled) { border-color: #91bdfb; background: #91bdfb; }
+.primary:disabled { border-color: #303037; background: #242429; color: #686871; cursor: default; }
+
+button:focus-visible, .file:has(input:focus-visible) {
+  outline: 2px solid #6da8ff;
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-thumb { border-radius: 999px; background: #35353b; }

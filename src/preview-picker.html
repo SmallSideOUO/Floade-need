@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>選擇 Markdown</title>
+    <link rel="stylesheet" href="./preview-picker.css">
+  </head>
+  <body>
+    <main class="dialog" role="dialog" aria-modal="true" aria-labelledby="title">
+      <header>
+        <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade</span></div>
+        <div class="window-actions">
+          <button id="pin" class="icon-button" type="button" aria-label="置頂" title="置頂">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 5 3 3v2h-4v8l-2-2v-6H7v-2l3-3-1-5Z"/></svg>
+          </button>
+          <button id="close" class="close" type="button" aria-label="關閉">×</button>
+        </div>
+      </header>
+      <section>
+        <h1 id="title">選擇要顯示的 Markdown</h1>
+        <p id="folder" class="folder"></p>
+        <input id="search" type="search" placeholder="搜尋 Markdown" autocomplete="off">
+        <div id="files" class="files"></div>
+      </section>
+      <footer>
+        <span id="selection-count">尚未選擇</span>
+        <button id="open" class="primary" type="button" disabled>顯示選取項目</button>
+      </footer>
+    </main>
+    <script src="./preview-picker.js"></script>
+  </body>
+</html>

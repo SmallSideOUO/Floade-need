@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, Menu, screen, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -21,6 +21,9 @@ if (!app.requestSingleInstanceLock()) {
   let folders = []
   let configFile
   const pushingFolders = new Set()
+  const previewPickers = new Map()
+  const previewWindows = new Map()
+  const previewFiles = new Map()
 
   function loadFolders() {
     try {
@@ -170,6 +173,261 @@ if (!app.requestSingleInstanceLock()) {
         window.focus()
       })
       window.loadFile(path.join(app.getAppPath(), 'src', 'link-dialog.html'))
+    })
+  }
+
+  async function findMarkdownFiles(folderPath) {
+    const markdownFiles = []
+
+    async function walk(directory) {
+      const entries = await fs.promises.readdir(directory, { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.name === '.git') continue
+        const entryPath = path.join(directory, entry.name)
+        if (entry.isDirectory()) {
+          await walk(entryPath)
+        } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.md') {
+          markdownFiles.push(path.relative(folderPath, entryPath).split(path.sep).join('/'))
+        }
+      }
+    }
+
+    await walk(folderPath)
+    return markdownFiles.sort((left, right) => left.localeCompare(right, 'zh-Hant'))
+  }
+
+  function markdownPath(folderPath, relativePath) {
+    const absolutePath = path.resolve(folderPath, relativePath)
+    const relative = path.relative(folderPath, absolutePath)
+    if (relative.startsWith('..') || path.isAbsolute(relative)) return null
+    if (path.extname(absolutePath).toLowerCase() !== '.md') return null
+    return absolutePath
+  }
+
+  async function openMarkdownPreview(folderPath, relativePath) {
+    const filePath = markdownPath(folderPath, relativePath)
+    if (!filePath || !fs.existsSync(filePath)) return
+
+    const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
+    const existingWindow = previewWindows.get(key)
+    if (existingWindow && !existingWindow.isDestroyed()) {
+      existingWindow.show()
+      existingWindow.focus()
+      return
+    }
+
+    const window = new BrowserWindow({
+      width: 480,
+      height: 560,
+      minWidth: 320,
+      minHeight: 260,
+      frame: false,
+      transparent: true,
+      resizable: true,
+      maximizable: false,
+      minimizable: true,
+      fullscreenable: false,
+      show: false,
+      webPreferences: {
+        preload: path.join(app.getAppPath(), 'src', 'markdown-preview-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+
+    const webContentsId = window.webContents.id
+    previewWindows.set(key, window)
+    previewFiles.set(webContentsId, filePath)
+    window.on('closed', () => {
+      previewWindows.delete(key)
+      previewFiles.delete(webContentsId)
+    })
+    window.webContents.once('did-finish-load', async () => {
+      try {
+        const content = await fs.promises.readFile(filePath, 'utf8')
+        window.webContents.send('preview:document', {
+          name: path.basename(filePath),
+          path: relativePath,
+          content,
+          pinned: window.isAlwaysOnTop()
+        })
+      } catch (error) {
+        if (!window.isDestroyed()) window.close()
+        showToast('預覽失敗', commandErrorMessage(error), 'error')
+      }
+    })
+    window.once('ready-to-show', () => {
+      window.show()
+      window.focus()
+    })
+    window.loadFile(path.join(app.getAppPath(), 'src', 'markdown-preview.html'))
+  }
+
+  async function syncFolderForPreview(folder) {
+    if (!folder.repo) return
+
+    const gitDirectory = path.join(folder.path, '.git')
+    const remoteUrl = `https://github.com/${folder.repo}.git`
+    if (!fs.existsSync(gitDirectory)) {
+      const entries = await fs.promises.readdir(folder.path)
+      if (entries.length === 0) {
+        await command('gh', ['auth', 'setup-git'], folder.path)
+        await command('git', ['clone', remoteUrl, '.'], folder.path)
+      }
+      return
+    }
+
+    const { stdout: status } = await command(
+      'git',
+      ['status', '--porcelain', '--untracked-files=normal'],
+      folder.path
+    )
+    if (status.trim()) return
+
+    await command('gh', ['auth', 'setup-git'], folder.path)
+    const { stdout: remotes } = await command('git', ['remote'], folder.path)
+    if (remotes.split(/\r?\n/).includes('origin')) {
+      await command('git', ['remote', 'set-url', 'origin', remoteUrl], folder.path)
+    } else {
+      await command('git', ['remote', 'add', 'origin', remoteUrl], folder.path)
+    }
+
+    try {
+      await command('git', ['ls-remote', '--exit-code', '--heads', 'origin', 'main'], folder.path)
+    } catch (error) {
+      if (error.code === 2) return
+      throw error
+    }
+
+    await command('git', ['pull', '--ff-only', 'origin', 'main'], folder.path)
+  }
+
+  async function showPreviewPicker(folder) {
+    if (!fs.existsSync(folder.path)) {
+      showToast('預覽失敗', '找不到這個資料夾。', 'error')
+      return
+    }
+
+    const existingPicker = [...previewPickers.values()].find(picker => picker.folderPath === folder.path)
+    if (existingPicker && !existingPicker.window.isDestroyed()) {
+      existingPicker.window.show()
+      existingPicker.window.focus()
+      return
+    }
+
+    if (folder.repo) {
+      const processingToast = showToast('讀取 Markdown', `${folder.repo} 正在檢查更新…`, 'loading', 0)
+      try {
+        await syncFolderForPreview(folder)
+      } catch (error) {
+        showToast('同步失敗', commandErrorMessage(error), 'error')
+      } finally {
+        if (!processingToast.isDestroyed()) processingToast.close()
+      }
+    }
+
+    let markdownFiles
+    try {
+      markdownFiles = await findMarkdownFiles(folder.path)
+    } catch (error) {
+      showToast('預覽失敗', commandErrorMessage(error), 'error')
+      return
+    }
+
+    const window = new BrowserWindow({
+      width: 540,
+      height: 550,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      alwaysOnTop: false,
+      skipTaskbar: true,
+      show: false,
+      webPreferences: {
+        preload: path.join(app.getAppPath(), 'src', 'preview-picker-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+
+    const webContentsId = window.webContents.id
+    previewPickers.set(webContentsId, {
+      window,
+      folderPath: folder.path,
+      markdownFiles: new Set(markdownFiles)
+    })
+    window.on('closed', () => previewPickers.delete(webContentsId))
+    window.webContents.once('did-finish-load', () => {
+      window.webContents.send('picker:files', {
+        folder: folder.path,
+        files: markdownFiles,
+        pinned: window.isAlwaysOnTop()
+      })
+    })
+    window.once('ready-to-show', () => {
+      window.show()
+      window.focus()
+    })
+    window.loadFile(path.join(app.getAppPath(), 'src', 'preview-picker.html'))
+  }
+
+  function registerPreviewHandlers() {
+    ipcMain.handle('picker:toggle-pin', event => {
+      const picker = previewPickers.get(event.sender.id)
+      if (!picker || picker.window.isDestroyed()) return false
+      const pinned = !picker.window.isAlwaysOnTop()
+      picker.window.setAlwaysOnTop(pinned)
+      return pinned
+    })
+
+    ipcMain.handle('picker:close', event => {
+      const picker = previewPickers.get(event.sender.id)
+      if (picker && !picker.window.isDestroyed()) picker.window.close()
+    })
+
+    ipcMain.handle('picker:open-files', async (event, selectedFiles) => {
+      const picker = previewPickers.get(event.sender.id)
+      if (!picker || !Array.isArray(selectedFiles)) return
+      const allowedFiles = selectedFiles.filter(file => picker.markdownFiles.has(file))
+      for (const file of allowedFiles) {
+        await openMarkdownPreview(picker.folderPath, file)
+      }
+    })
+
+    ipcMain.handle('preview:toggle-pin', event => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (!window || window.isDestroyed()) return false
+      const pinned = !window.isAlwaysOnTop()
+      window.setAlwaysOnTop(pinned)
+      return pinned
+    })
+
+    ipcMain.handle('preview:close', event => {
+      const window = BrowserWindow.fromWebContents(event.sender)
+      if (window && !window.isDestroyed()) window.close()
+    })
+
+    ipcMain.handle('preview:save', async (event, content) => {
+      const filePath = previewFiles.get(event.sender.id)
+      if (!filePath || typeof content !== 'string') throw new Error('找不到 Markdown 檔案。')
+      await fs.promises.writeFile(filePath, content, 'utf8')
+      refreshTrayMenu()
+      return true
+    })
+
+    ipcMain.on('preview:save-sync', (event, content) => {
+      const filePath = previewFiles.get(event.sender.id)
+      try {
+        if (filePath && typeof content === 'string') {
+          fs.writeFileSync(filePath, content, 'utf8')
+        }
+        event.returnValue = true
+      } catch {
+        event.returnValue = false
+      }
     })
   }
 
@@ -335,6 +593,10 @@ if (!app.requestSingleInstanceLock()) {
       ? folders.map(folder => {
           const submenu = Menu.buildFromTemplate([
             {
+              label: '預覽',
+              click: () => showPreviewPicker(folder)
+            },
+            {
               label: pushingFolders.has(folder.path) ? 'Push 中…' : 'Push',
               enabled: hasPushableChanges(folder),
               click: () => pushFolder(folder)
@@ -349,7 +611,7 @@ if (!app.requestSingleInstanceLock()) {
               click: () => removeFolder(folder)
             }
           ])
-          pushItems.push({ folder, pushItem: submenu.items[0] })
+          pushItems.push({ folder, pushItem: submenu.items[1] })
 
           return {
             label: folder.path,
@@ -386,11 +648,12 @@ if (!app.requestSingleInstanceLock()) {
     tray?.setContextMenu(buildTrayMenu())
   }
 
-  app.on('window-all-closed', event => event.preventDefault())
+  app.on('window-all-closed', () => {})
 
   app.whenReady().then(() => {
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
+    registerPreviewHandlers()
 
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
       fs.unlinkSync(controlSocket)

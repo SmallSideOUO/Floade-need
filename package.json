@@ -24,7 +24,7 @@
   "scripts": {
     "start": "node bin/floade.mjs",
     "start:foreground": "electron . --foreground",
-    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js"
+    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js && node --check src/preview-picker.js && node --check src/preview-picker-preload.cjs && node --check src/markdown-preview.js && node --check src/markdown-preview-preload.cjs"
   },
   "dependencies": {
     "electron": "43.3.0"

@@ -24,6 +24,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 
 - Runs quietly in the system tray
 - Adds existing local folders through the native folder picker
+- Opens one or more local Markdown files in editable desktop windows
+- Supports always-on-top controls in both the Markdown picker and document windows
 - Uses the current GitHub CLI login to list private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
 - Shows processing, success, and failure notifications
@@ -65,6 +67,8 @@ Right-click the Floade tray icon:
 2. Hover the folder path and select **Link**.
 3. Choose a private repository from the current GitHub CLI account.
 4. Select **Push**.
+
+Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
 `Push` runs the equivalent of:
 
