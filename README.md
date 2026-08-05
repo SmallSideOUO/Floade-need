@@ -6,6 +6,20 @@ Floade is a tiny system-tray app that links local folders to private GitHub repo
 
 It has no main window. Start it with `floade`, then use the tray menu to add folders, link repositories, push changes, or quit.
 
+## Why I built Floade
+
+I wanted a fast way to keep my own data in a private repository instead of creating and maintaining another cloud database. My files stay in a normal local folder, while GitHub provides the remote storage layer I already use.
+
+For my personal workflow, this gives me:
+
+- A quick path from a local file to a private GitHub repository
+- Git history for reviewing or restoring previous versions
+- Multi-device access through the normal Git clone, pull, and push workflow
+- GitHub-hosted availability without running my own server 24/7
+- Plain files that remain usable without Floade
+
+Floade itself has no hosted backend and does not receive a copy of the linked folder. It only automates local Git and GitHub CLI operations. Multi-device synchronization currently uses Git; automatic background pull and conflict resolution are not implemented yet.
+
 ## Features
 
 - Runs quietly in the system tray
