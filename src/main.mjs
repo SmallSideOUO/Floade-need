@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, Menu, screen, Tray, nativeImage } from 'electron'
-import { execFile } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -212,7 +212,10 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function pushFolder(folder) {
-    if (!folder.repo || pushingFolders.has(folder.path)) return
+    if (!hasPushableChanges(folder)) {
+      refreshTrayMenu()
+      return
+    }
     pushingFolders.add(folder.path)
     refreshTrayMenu()
     const processingToast = showToast('Push 處理中', `${folder.repo} 正在同步…`, 'loading', 0)
@@ -292,14 +295,48 @@ if (!app.requestSingleInstanceLock()) {
     refreshTrayMenu()
   }
 
+  function hasPushableChanges(folder) {
+    if (!folder.repo || pushingFolders.has(folder.path) || !fs.existsSync(folder.path)) {
+      return false
+    }
+
+    const gitDirectory = path.join(folder.path, '.git')
+    if (!fs.existsSync(gitDirectory)) {
+      try {
+        return fs.readdirSync(folder.path).some(entry => entry !== '.git')
+      } catch {
+        return false
+      }
+    }
+
+    const git = args => spawnSync('git', args, {
+      cwd: folder.path,
+      windowsHide: true,
+      encoding: 'utf8'
+    })
+
+    const status = git(['status', '--porcelain', '--untracked-files=normal'])
+    if (status.error || status.status !== 0) return false
+    if (status.stdout.trim()) return true
+
+    const head = git(['rev-parse', '--verify', 'HEAD'])
+    if (head.error || head.status !== 0) return false
+
+    const remoteMain = git(['rev-parse', '--verify', 'refs/remotes/origin/main'])
+    if (remoteMain.error || remoteMain.status !== 0) return true
+
+    const ahead = git(['rev-list', '--count', 'refs/remotes/origin/main..HEAD'])
+    return !ahead.error && ahead.status === 0 && Number(ahead.stdout.trim()) > 0
+  }
+
   function buildTrayMenu() {
+    const pushItems = []
     const folderItems = folders.length > 0
-      ? folders.map(folder => ({
-          label: folder.path,
-          submenu: [
+      ? folders.map(folder => {
+          const submenu = Menu.buildFromTemplate([
             {
               label: pushingFolders.has(folder.path) ? 'Push 中…' : 'Push',
-              enabled: Boolean(folder.repo) && !pushingFolders.has(folder.path),
+              enabled: hasPushableChanges(folder),
               click: () => pushFolder(folder)
             },
             {
@@ -311,11 +348,17 @@ if (!app.requestSingleInstanceLock()) {
               label: '刪除',
               click: () => removeFolder(folder)
             }
-          ]
-        }))
+          ])
+          pushItems.push({ folder, pushItem: submenu.items[0] })
+
+          return {
+            label: folder.path,
+            submenu
+          }
+        })
       : [{ label: '目前沒有資料夾', enabled: false }]
 
-    return Menu.buildFromTemplate([
+    const menu = Menu.buildFromTemplate([
       {
         label: '新增資料夾',
         click: addFolder
@@ -328,6 +371,15 @@ if (!app.requestSingleInstanceLock()) {
         click: () => app.quit()
       }
     ])
+
+    menu.on('menu-will-show', () => {
+      for (const { folder, pushItem } of pushItems) {
+        pushItem.label = pushingFolders.has(folder.path) ? 'Push 中…' : 'Push'
+        pushItem.enabled = hasPushableChanges(folder)
+      }
+    })
+
+    return menu
   }
 
   function refreshTrayMenu() {
