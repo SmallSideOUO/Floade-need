@@ -18,6 +18,8 @@ For my personal workflow, this gives me:
 - GitHub-hosted availability without running my own server 24/7
 - Plain files that remain usable without Floade
 
+I also personally needed a faster way to translate text already visible on my screen. Instead of copying text and replacing the current clipboard contents, I can press a shortcut, drag over the text, and let Floade run local OCR before showing the translation.
+
 Floade itself has no hosted backend and does not receive a copy of the linked folder. It only automates local Git and GitHub CLI operations. Multi-device synchronization currently uses Git; automatic background pull and conflict resolution are not implemented yet.
 
 ## Features
