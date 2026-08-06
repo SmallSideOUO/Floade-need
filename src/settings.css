@@ -1,0 +1,181 @@
+:root {
+  color-scheme: dark;
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+body { padding: 10px; }
+
+.settings {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  background: #111113;
+}
+
+header {
+  display: flex;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 13px 0 16px;
+  color: #b7b7bd;
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-app-region: drag;
+}
+
+.brand { display: flex; align-items: center; gap: 8px; }
+.brand img { width: 18px; height: 18px; object-fit: contain; }
+
+.close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #92929a;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.close:hover { background: #26262b; color: #f4f4f5; }
+
+.content {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 22px 22px;
+}
+
+.heading h1 {
+  margin: 0;
+  color: #f7f7f8;
+  font-size: 22px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.heading p, .setting-copy p {
+  margin: 5px 0 0;
+  color: #85858d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.setting-card {
+  padding: 16px;
+  border: 1px solid #29292f;
+  border-radius: 13px;
+  background: #17171a;
+}
+
+.setting-copy h2 {
+  margin: 0;
+  color: #ececef;
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.shortcut-row {
+  display: flex;
+  gap: 9px;
+  margin-top: 13px;
+}
+
+.shortcut {
+  display: flex;
+  min-width: 0;
+  height: 48px;
+  flex: 1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 13px;
+  border: 1px solid #34343a;
+  border-radius: 10px;
+  outline: none;
+  background: #1d1d21;
+  color: #e9e9ec;
+  font: inherit;
+  cursor: pointer;
+}
+
+.shortcut:hover, .shortcut:focus-visible { border-color: #53535c; background: #222227; }
+.shortcut.recording { border-color: #78aef8; box-shadow: 0 0 0 3px rgba(120, 174, 248, 0.12); }
+.shortcut span { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.shortcut small { flex: 0 0 auto; color: #777780; font-size: 10px; }
+.shortcut.recording small { color: #78aef8; }
+
+.secondary {
+  width: 66px;
+  height: 48px;
+  border: 1px solid #34343a;
+  border-radius: 10px;
+  background: #202024;
+  color: #cfcfd4;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondary:hover { border-color: #484850; background: #29292e; }
+.secondary:disabled { color: #5f5f67; cursor: default; }
+
+.status {
+  min-height: 17px;
+  margin: 7px 0 -4px;
+  color: #85858d;
+  font-size: 11px;
+}
+
+.status.error { color: #ef806e; }
+.status.success { color: #69cc98; }
+
+.setting-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+#opacity-value { flex: 0 0 auto; color: #78aef8; font-size: 14px; font-variant-numeric: tabular-nums; }
+
+input[type="range"] {
+  width: 100%;
+  height: 5px;
+  margin: 24px 0 0;
+  appearance: none;
+  border-radius: 999px;
+  outline: none;
+  background: linear-gradient(to right, #78aef8 0 var(--progress, 100%), #34343a var(--progress, 100%) 100%);
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  width: 17px;
+  height: 17px;
+  appearance: none;
+  border: 3px solid #111113;
+  border-radius: 50%;
+  background: #78aef8;
+  box-shadow: 0 0 0 1px #78aef8;
+  cursor: pointer;
+}
+
+input[type="range"]:focus-visible { outline: 2px solid #6da8ff; outline-offset: 5px; }
+.range-labels { display: flex; justify-content: space-between; margin-top: 8px; color: #696971; font-size: 10px; }
+button:focus-visible { outline: 2px solid #6da8ff; outline-offset: 2px; }

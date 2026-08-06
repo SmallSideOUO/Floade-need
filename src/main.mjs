@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -20,6 +20,12 @@ if (!app.requestSingleInstanceLock()) {
   let controlServer
   let folders = []
   let configFile
+  let settingsWindow
+  let registeredShortcut
+  let settings = {
+    shortcut: null,
+    opacity: 1
+  }
   const pushingFolders = new Set()
   const previewPickers = new Map()
   const previewWindows = new Map()
@@ -40,14 +46,21 @@ if (!app.requestSingleInstanceLock()) {
               : { path: folder?.path, repo: folder?.repo ?? null })
             .filter(folder => typeof folder.path === 'string')
         : []
+      settings = {
+        shortcut: typeof config.settings?.shortcut === 'string' ? config.settings.shortcut : null,
+        opacity: Number.isFinite(config.settings?.opacity)
+          ? Math.min(1, Math.max(0.4, config.settings.opacity))
+          : 1
+      }
     } catch {
       folders = []
+      settings = { shortcut: null, opacity: 1 }
     }
   }
 
   function saveFolders() {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
-    fs.writeFileSync(configFile, `${JSON.stringify({ folders }, null, 2)}\n`, 'utf8')
+    fs.writeFileSync(configFile, `${JSON.stringify({ folders, settings }, null, 2)}\n`, 'utf8')
   }
 
   function showDeletePrompt(folderPath) {
@@ -56,6 +69,7 @@ if (!app.requestSingleInstanceLock()) {
         width: 430,
         height: 230,
         icon: windowIconPath(),
+        opacity: settings.opacity,
         frame: false,
         transparent: true,
         resizable: false,
@@ -100,6 +114,7 @@ if (!app.requestSingleInstanceLock()) {
       width: 370,
       height: 96,
       icon: windowIconPath(),
+      opacity: settings.opacity,
       frame: false,
       transparent: true,
       resizable: false,
@@ -143,6 +158,7 @@ if (!app.requestSingleInstanceLock()) {
         width: 520,
         height: 480,
         icon: windowIconPath(),
+        opacity: settings.opacity,
         frame: false,
         transparent: true,
         resizable: false,
@@ -228,6 +244,7 @@ if (!app.requestSingleInstanceLock()) {
       width: 480,
       height: 560,
       icon: windowIconPath(),
+      opacity: settings.opacity,
       minWidth: 320,
       minHeight: 260,
       frame: false,
@@ -347,6 +364,7 @@ if (!app.requestSingleInstanceLock()) {
       width: 540,
       height: 550,
       icon: windowIconPath(),
+      opacity: settings.opacity,
       frame: false,
       transparent: true,
       resizable: false,
@@ -382,6 +400,105 @@ if (!app.requestSingleInstanceLock()) {
       window.focus()
     })
     window.loadFile(path.join(app.getAppPath(), 'src', 'preview-picker.html'))
+  }
+
+  function openFloadeMenu() {
+    refreshTrayMenu()
+    tray?.popUpContextMenu()
+  }
+
+  function setGlobalShortcut(shortcut) {
+    const previousShortcut = registeredShortcut
+    if (previousShortcut) globalShortcut.unregister(previousShortcut)
+    registeredShortcut = undefined
+
+    if (!shortcut) {
+      settings.shortcut = null
+      saveFolders()
+      return { success: true, shortcut: null }
+    }
+
+    if (globalShortcut.register(shortcut, openFloadeMenu)) {
+      registeredShortcut = shortcut
+      settings.shortcut = shortcut
+      saveFolders()
+      return { success: true, shortcut }
+    }
+
+    if (previousShortcut && globalShortcut.register(previousShortcut, openFloadeMenu)) {
+      registeredShortcut = previousShortcut
+    }
+    return {
+      success: false,
+      shortcut: settings.shortcut,
+      message: '這組快捷鍵已被其他程式使用。'
+    }
+  }
+
+  function setGlobalOpacity(value) {
+    const opacity = Math.min(1, Math.max(0.4, Number(value) || 1))
+    settings.opacity = opacity
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) window.setOpacity(opacity)
+    }
+    saveFolders()
+    return opacity
+  }
+
+  function showSettings() {
+    if (settingsWindow && !settingsWindow.isDestroyed()) {
+      settingsWindow.show()
+      settingsWindow.focus()
+      return
+    }
+
+    settingsWindow = new BrowserWindow({
+      width: 560,
+      height: 500,
+      icon: windowIconPath(),
+      opacity: settings.opacity,
+      frame: false,
+      transparent: true,
+      resizable: false,
+      maximizable: false,
+      minimizable: false,
+      fullscreenable: false,
+      skipTaskbar: false,
+      show: false,
+      webPreferences: {
+        preload: path.join(app.getAppPath(), 'src', 'settings-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false
+      }
+    })
+
+    settingsWindow.on('closed', () => { settingsWindow = undefined })
+    settingsWindow.webContents.once('did-finish-load', () => {
+      settingsWindow.webContents.send('settings:state', settings)
+    })
+    settingsWindow.once('ready-to-show', () => {
+      settingsWindow.show()
+      settingsWindow.focus()
+    })
+    settingsWindow.loadFile(path.join(app.getAppPath(), 'src', 'settings.html'))
+  }
+
+  function registerSettingsHandlers() {
+    ipcMain.handle('settings:set-shortcut', (event, shortcut) => {
+      if (event.sender !== settingsWindow?.webContents) return { success: false }
+      return setGlobalShortcut(typeof shortcut === 'string' ? shortcut : null)
+    })
+
+    ipcMain.handle('settings:set-opacity', (event, opacity) => {
+      if (event.sender !== settingsWindow?.webContents) return settings.opacity
+      return setGlobalOpacity(opacity)
+    })
+
+    ipcMain.handle('settings:close', event => {
+      if (event.sender === settingsWindow?.webContents && !settingsWindow.isDestroyed()) {
+        settingsWindow.close()
+      }
+    })
   }
 
   function registerPreviewHandlers() {
@@ -639,6 +756,11 @@ if (!app.requestSingleInstanceLock()) {
       ...folderItems,
       { type: 'separator' },
       {
+        label: '設定',
+        click: showSettings
+      },
+      { type: 'separator' },
+      {
         label: '退出',
         click: () => app.quit()
       }
@@ -664,6 +786,7 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'win32') app.setAppUserModelId('com.floade.local-data')
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
+    registerSettingsHandlers()
     registerPreviewHandlers()
 
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
@@ -685,9 +808,14 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(icon)
     tray.setToolTip('Floade')
     refreshTrayMenu()
+    if (settings.shortcut) {
+      const result = setGlobalShortcut(settings.shortcut)
+      if (!result.success) showToast('快捷鍵失敗', result.message, 'error')
+    }
   })
 
   app.on('before-quit', () => {
+    globalShortcut.unregisterAll()
     controlServer?.close()
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
       fs.unlinkSync(controlSocket)

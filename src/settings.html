@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Floade 設定</title>
+    <link rel="stylesheet" href="./settings.css">
+  </head>
+  <body>
+    <main class="settings" role="dialog" aria-modal="true" aria-labelledby="title">
+      <header>
+        <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade</span></div>
+        <button id="close" class="close" type="button" aria-label="關閉">×</button>
+      </header>
+
+      <section class="content">
+        <div class="heading">
+          <h1 id="title">設定</h1>
+          <p>Floade 在這部裝置上的顯示與操作方式。</p>
+        </div>
+
+        <article class="setting-card">
+          <div class="setting-copy">
+            <h2>全域快捷鍵</h2>
+            <p>在任何程式中開啟 Floade 選單，最多可同時使用三個按鍵。</p>
+          </div>
+          <div class="shortcut-row">
+            <button id="record" class="shortcut" type="button">
+              <span id="shortcut-value">尚未設定</span>
+              <small id="shortcut-hint">點擊後錄製</small>
+            </button>
+            <button id="clear-shortcut" class="secondary" type="button">清除</button>
+          </div>
+          <p id="shortcut-status" class="status" aria-live="polite"></p>
+        </article>
+
+        <article class="setting-card">
+          <div class="setting-title-row">
+            <div class="setting-copy">
+              <h2>全域視窗透明度</h2>
+              <p>套用到 Floade 的 Markdown、選擇、通知及設定視窗。</p>
+            </div>
+            <strong id="opacity-value">100%</strong>
+          </div>
+          <input id="opacity" type="range" min="40" max="100" step="1" value="100" aria-label="全域視窗透明度">
+          <div class="range-labels"><span>40%</span><span>100%</span></div>
+        </article>
+      </section>
+    </main>
+    <script src="./settings.js"></script>
+  </body>
+</html>
