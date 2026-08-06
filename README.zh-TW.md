@@ -113,6 +113,10 @@ npm run check
 npm start
 ```
 
+## 社群
+
+歡迎到 [Floade Discord](https://discord.gg/nKe2QAxF9) 提問、提供回饋或分享想法。
+
 ## 授權
 
 [MIT](LICENSE)

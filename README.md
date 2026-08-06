@@ -113,6 +113,10 @@ npm run check
 npm start
 ```
 
+## Community
+
+Questions, feedback, and ideas are welcome in the [Floade Discord](https://discord.gg/nKe2QAxF9).
+
 ## License
 
 [MIT](LICENSE)
