@@ -31,6 +31,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Provides a global shortcut recorder with chords of up to three keys
 - Translates a dragged screen region with bundled local OCR and Google Translate
 - Lets translation windows change or swap languages and edit both the source and translated text
+- Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
 - Uses the current GitHub CLI login to list private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
@@ -78,7 +79,7 @@ Right-click the Floade tray icon:
 
 Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
-Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the Floade menu and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the opacity of all Floade windows from 40% to 100%.
+Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the Floade menu and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the interface language and the opacity of all Floade windows from 40% to 100%. Floade follows the operating-system language by default and falls back to English for unsupported languages.
 
 `Push` runs the equivalent of:
 

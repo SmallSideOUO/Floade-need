@@ -2,6 +2,7 @@ const search = document.querySelector('#search')
 const repositoryList = document.querySelector('#repositories')
 const close = document.querySelector('#close')
 let repositories = []
+const t = key => window.floadeI18n.t(key)
 
 function render() {
   const query = search.value.trim().toLowerCase()
@@ -11,7 +12,7 @@ function render() {
   if (visible.length === 0) {
     const empty = document.createElement('div')
     empty.className = 'empty'
-    empty.textContent = '找不到 Repo'
+    empty.textContent = t('link.empty')
     repositoryList.append(empty)
     return
   }
@@ -35,6 +36,7 @@ window.setRepositories = values => {
 }
 
 search.addEventListener('input', render)
+window.addEventListener('floade-locale-changed', render)
 close.addEventListener('click', () => { window.location.href = 'floade-link://cancel' })
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape') window.location.href = 'floade-link://cancel'

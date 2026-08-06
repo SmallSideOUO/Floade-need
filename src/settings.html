@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-title-i18n="settings.title">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,41 +10,53 @@
     <main class="settings" role="dialog" aria-modal="true" aria-labelledby="title">
       <header>
         <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade</span></div>
-        <button id="close" class="close" type="button" aria-label="關閉">×</button>
+        <button id="close" class="close" type="button" data-i18n-title="common.close">×</button>
       </header>
 
       <section class="content">
         <div class="heading">
-          <h1 id="title">設定</h1>
-          <p>Floade 在這部裝置上的顯示與操作方式。</p>
+          <h1 id="title" data-i18n="settings.heading">設定</h1>
+          <p data-i18n="settings.description">Floade 在這部裝置上的顯示與操作方式。</p>
         </div>
+
+        <article class="setting-card setting-language-card">
+          <div class="setting-copy">
+            <h2 data-i18n="settings.language">語言</h2>
+            <p data-i18n="settings.languageDescription">跟隨系統語言，或手動選擇 Floade 的介面語言。</p>
+          </div>
+          <select id="language" data-i18n-aria="settings.language">
+            <option value="system" data-i18n="settings.systemLanguage">跟隨系統</option>
+            <option value="en">English</option>
+            <option value="zh-TW">繁體中文</option>
+          </select>
+        </article>
 
         <article class="setting-card">
           <div class="setting-copy">
-            <h2>全域快捷鍵</h2>
-            <p>在任何程式中開啟 Floade 選單，最多可同時使用三個按鍵。</p>
+            <h2 data-i18n="settings.menuShortcut">全域快捷鍵</h2>
+            <p data-i18n="settings.menuShortcutDescription">在任何程式中開啟 Floade 選單，最多可同時使用三個按鍵。</p>
           </div>
           <div class="shortcut-row">
             <button id="record" class="shortcut" type="button">
-              <span id="shortcut-value">尚未設定</span>
-              <small id="shortcut-hint">點擊後錄製</small>
+              <span id="shortcut-value" data-i18n="settings.unset">尚未設定</span>
+              <small id="shortcut-hint" data-i18n="settings.record">點擊後錄製</small>
             </button>
-            <button id="clear-shortcut" class="secondary" type="button">清除</button>
+            <button id="clear-shortcut" class="secondary" type="button" data-i18n="settings.clear">清除</button>
           </div>
           <p id="shortcut-status" class="status" aria-live="polite"></p>
         </article>
 
         <article class="setting-card">
           <div class="setting-copy">
-            <h2>OCR 畫面翻譯</h2>
-            <p>按下快捷鍵後拖曳框選文字；本機 OCR 完成後交給 Google 自動翻譯。</p>
+            <h2 data-i18n="settings.translationShortcut">OCR 畫面翻譯</h2>
+            <p data-i18n="settings.translationShortcutDescription">按下快捷鍵後拖曳框選文字；本機 OCR 完成後交給 Google 自動翻譯。</p>
           </div>
           <div class="shortcut-row">
             <button id="translation-record" class="shortcut" type="button">
-              <span id="translation-shortcut-value">尚未設定</span>
-              <small id="translation-shortcut-hint">點擊後錄製</small>
+              <span id="translation-shortcut-value" data-i18n="settings.unset">尚未設定</span>
+              <small id="translation-shortcut-hint" data-i18n="settings.record">點擊後錄製</small>
             </button>
-            <button id="clear-translation-shortcut" class="secondary" type="button">清除</button>
+            <button id="clear-translation-shortcut" class="secondary" type="button" data-i18n="settings.clear">清除</button>
           </div>
           <p id="translation-shortcut-status" class="status" aria-live="polite"></p>
         </article>
@@ -52,16 +64,17 @@
         <article class="setting-card">
           <div class="setting-title-row">
             <div class="setting-copy">
-              <h2>全域視窗透明度</h2>
-              <p>套用到 Floade 的 Markdown、選擇、通知及設定視窗。</p>
+              <h2 data-i18n="settings.opacity">全域視窗透明度</h2>
+              <p data-i18n="settings.opacityDescription">套用到 Floade 的 Markdown、選擇、通知及設定視窗。</p>
             </div>
             <strong id="opacity-value">100%</strong>
           </div>
-          <input id="opacity" type="range" min="40" max="100" step="1" value="100" aria-label="全域視窗透明度">
+          <input id="opacity" type="range" min="40" max="100" step="1" value="100" data-i18n-aria="settings.opacity">
           <div class="range-labels"><span>40%</span><span>100%</span></div>
         </article>
       </section>
     </main>
+    <script src="./i18n-renderer.js"></script>
     <script src="./settings.js"></script>
   </body>
 </html>

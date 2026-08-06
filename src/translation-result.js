@@ -9,31 +9,18 @@ const copyButton = document.querySelector('#copy')
 const pinButton = document.querySelector('#pin')
 const closeButton = document.querySelector('#close')
 
-const languages = [
-  ['zh-TW', '繁體中文'],
-  ['zh-CN', '簡體中文'],
-  ['en', '英文'],
-  ['ja', '日文'],
-  ['ko', '韓文'],
-  ['fr', '法文'],
-  ['de', '德文'],
-  ['es', '西班牙文'],
-  ['pt', '葡萄牙文'],
-  ['it', '義大利文'],
-  ['ru', '俄文'],
-  ['vi', '越南文'],
-  ['th', '泰文'],
-  ['id', '印尼文']
-]
+const languageCodes = ['zh-TW', 'zh-CN', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'it', 'ru', 'vi', 'th', 'id']
+const t = (key, variables) => window.floadeI18n.t(key, variables)
 
 let translating = false
 let detectedLanguage = ''
 
 function addLanguageOptions(select) {
-  for (const [value, label] of languages) {
+  for (const value of languageCodes) {
     const option = document.createElement('option')
     option.value = value
-    option.textContent = label
+    option.dataset.languageCode = value
+    option.textContent = t(`language.${value}`)
     select.append(option)
   }
 }
@@ -52,7 +39,7 @@ function setBusy(value) {
   targetLanguage.disabled = value
   swapButton.disabled = value
   status.className = ''
-  status.textContent = value ? '翻譯中…' : ''
+  status.textContent = value ? t('translation.translating') : ''
 }
 
 async function retranslate() {
@@ -66,11 +53,11 @@ async function retranslate() {
       targetLanguage: targetLanguage.value
     })
   } catch (error) {
-    result = { success: false, message: error?.message || '翻譯失敗。' }
+    result = { success: false, message: error?.message || t('translation.failed') }
   }
   setBusy(false)
   if (!result.success) {
-    status.textContent = result.message || '翻譯失敗。'
+    status.textContent = result.message || t('translation.failed')
     status.className = 'error'
     return
   }
@@ -78,9 +65,9 @@ async function retranslate() {
   ensureLanguageOption(sourceLanguage, result.sourceLanguage, result.sourceLanguageName)
   if (sourceLanguage.value === 'auto' && result.sourceLanguage) sourceLanguage.value = result.sourceLanguage
   translation.value = result.translation
-  status.textContent = '已更新'
+  status.textContent = t('translation.updated')
   setTimeout(() => {
-    if (!translating && status.textContent === '已更新') status.textContent = ''
+    if (!translating && status.textContent === t('translation.updated')) status.textContent = ''
   }, 1400)
 }
 
@@ -115,16 +102,23 @@ swapButton.addEventListener('click', async () => {
 
 copyButton.addEventListener('click', async () => {
   if (await window.floadeTranslation.copy(translation.value)) {
-    copyButton.textContent = '已複製'
-    setTimeout(() => { copyButton.textContent = '複製' }, 1400)
+    copyButton.textContent = t('translation.copied')
+    setTimeout(() => { copyButton.textContent = t('translation.copy') }, 1400)
   }
 })
 
 pinButton.addEventListener('click', async () => {
   const pinned = await window.floadeTranslation.togglePin()
   pinButton.classList.toggle('active', pinned)
+  pinButton.title = pinned ? t('common.unpin') : t('common.pin')
 })
 closeButton.addEventListener('click', () => window.floadeTranslation.close())
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape') window.floadeTranslation.close()
+})
+window.addEventListener('floade-locale-changed', () => {
+  for (const option of document.querySelectorAll('[data-language-code]')) {
+    option.textContent = t(`language.${option.dataset.languageCode}`)
+  }
+  pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
 })

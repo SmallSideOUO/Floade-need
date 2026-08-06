@@ -13,6 +13,27 @@ const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '
 const controlSocket = process.platform === 'win32'
   ? '\\\\.\\pipe\\floade-local-data-control'
   : path.join(os.tmpdir(), 'floade-local-data-control.sock')
+const cliLanguage = Intl.DateTimeFormat().resolvedOptions().locale.toLowerCase().startsWith('zh') ? 'zh-TW' : 'en'
+const cliMessages = {
+  en: {
+    stopped: 'Floade stopped.',
+    notRunning: 'Floade is not running.',
+    restarted: 'Floade restarted.',
+    unknown: 'Unknown command: {command}',
+    started: 'Floade is running in the background.'
+  },
+  'zh-TW': {
+    stopped: 'Floade 已停止。',
+    notRunning: 'Floade 目前沒有執行。',
+    restarted: 'Floade 已重新啟動。',
+    unknown: '未知指令：{command}',
+    started: 'Floade 已在背景執行。'
+  }
+}
+
+function cliText(key, variables = {}) {
+  return cliMessages[cliLanguage][key].replace(/\{(\w+)\}/g, (_match, name) => String(variables[name] ?? ''))
+}
 
 function launch() {
   const child = spawn(electron, [packageRoot, '--background'], {
@@ -56,19 +77,19 @@ const command = process.argv[2]?.toLowerCase()
 
 if (command === 'stop') {
   if (await sendCommand('stop')) {
-    console.log('Floade 已停止。')
+    console.log(cliText('stopped'))
   } else {
-    console.log('Floade 目前沒有執行。')
+    console.log(cliText('notRunning'))
   }
 } else if (command === 'restart') {
   await sendCommand('stop')
   await waitUntilStopped()
   launch()
-  console.log('Floade 已重新啟動。')
+  console.log(cliText('restarted'))
 } else if (command) {
-  console.error(`未知指令：${command}`)
+  console.error(cliText('unknown', { command }))
   process.exitCode = 1
 } else {
   launch()
-  console.log('Floade 已在背景執行。')
+  console.log(cliText('started'))
 }

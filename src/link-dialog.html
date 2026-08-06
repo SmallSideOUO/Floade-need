@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-title-i18n="link.title">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -10,14 +10,15 @@
     <main class="dialog" role="dialog" aria-modal="true" aria-labelledby="title">
       <header>
         <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade</span></div>
-        <button id="close" class="close" type="button" aria-label="關閉">×</button>
+        <button id="close" class="close" type="button" data-i18n-title="common.close">×</button>
       </header>
       <section>
-        <h1 id="title">選擇 Private Repo</h1>
-        <input id="search" type="search" placeholder="搜尋 Repo" autocomplete="off">
+        <h1 id="title" data-i18n="link.title">選擇 Private Repo</h1>
+        <input id="search" type="search" data-i18n-placeholder="link.search" autocomplete="off">
         <div id="repositories" class="repositories"></div>
       </section>
     </main>
+    <script src="./i18n-renderer.js"></script>
     <script src="./link-dialog.js"></script>
   </body>
 </html>

@@ -1,7 +1,9 @@
 const opacityInput = document.querySelector('#opacity')
 const opacityValue = document.querySelector('#opacity-value')
+const languageSelect = document.querySelector('#language')
 const closeButton = document.querySelector('#close')
 const modifierKeys = new Set(['CommandOrControl', 'Command', 'Alt', 'Shift'])
+const t = (key, variables) => window.floadeI18n.t(key, variables)
 
 const recorders = [
   {
@@ -30,7 +32,7 @@ let pressedCodes = new Set()
 let tooManyKeys = false
 
 function shortcutLabel(shortcut) {
-  if (!shortcut) return '尚未設定'
+  if (!shortcut) return t('settings.unset')
   return shortcut
     .split('+')
     .map(key => {
@@ -80,9 +82,9 @@ function setStatus(recorder, message = '', type = '') {
 function renderRecorder(recorder) {
   const recording = activeRecorder === recorder
   recorder.value.textContent = recording
-    ? recordedKeys.map(key => key.label).join(' + ') || '請按下快捷鍵'
+    ? recordedKeys.map(key => key.label).join(' + ') || t('settings.pressShortcut')
     : shortcutLabel(recorder.current)
-  recorder.hint.textContent = recording ? '放開按鍵完成' : '點擊後錄製'
+  recorder.hint.textContent = recording ? t('settings.recording') : t('settings.record')
   recorder.button.classList.toggle('recording', recording)
   recorder.clear.disabled = !recorder.current || recording
 }
@@ -101,13 +103,13 @@ function stopRecording() {
 
 function startRecording(recorder) {
   if (activeRecorder && activeRecorder !== recorder) {
-    setStatus(activeRecorder, '已取消錄製。')
+    setStatus(activeRecorder, t('settings.cancelled'))
   }
   activeRecorder = recorder
   recordedKeys = []
   pressedCodes = new Set()
   tooManyKeys = false
-  setStatus(recorder, '一次按下最多三個按鍵；按 Esc 取消。')
+  setStatus(recorder, t('settings.maxKeys'))
   renderAll()
   recorder.button.focus()
 }
@@ -117,14 +119,14 @@ async function finishRecording() {
   if (!recorder) return
   if (tooManyKeys) {
     stopRecording()
-    setStatus(recorder, '快捷鍵最多只能包含三個按鍵。', 'error')
+    setStatus(recorder, t('settings.tooManyKeys'), 'error')
     return
   }
 
   const hasRegularKey = recordedKeys.some(key => !modifierKeys.has(key.accelerator))
   if (!hasRegularKey) {
     stopRecording()
-    setStatus(recorder, '快捷鍵需要包含一個非修飾鍵。', 'error')
+    setStatus(recorder, t('settings.regularKey'), 'error')
     return
   }
 
@@ -136,7 +138,7 @@ async function finishRecording() {
   recorder.current = result.shortcut
   setStatus(
     recorder,
-    result.success ? '快捷鍵已儲存。' : result.message || '無法註冊這組快捷鍵。',
+    result.success ? t('settings.saved') : result.message || t('settings.conflict'),
     result.success ? 'success' : 'error'
   )
   renderRecorder(recorder)
@@ -153,6 +155,7 @@ window.floadeSettings.onState(state => {
   recorders[0].current = state.shortcut
   recorders[1].current = state.translationShortcut
   opacityInput.value = String(Math.round(state.opacity * 100))
+  languageSelect.value = state.language || 'system'
   updateOpacityDisplay()
   renderAll()
 })
@@ -166,7 +169,7 @@ for (const recorder of recorders) {
     const result = await recorder.save(null)
     if (result.success) {
       recorder.current = null
-      setStatus(recorder, '已清除快捷鍵。', 'success')
+      setStatus(recorder, t('settings.cleared'), 'success')
       renderRecorder(recorder)
     }
   })
@@ -182,7 +185,7 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Escape') {
     const recorder = activeRecorder
     stopRecording()
-    setStatus(recorder, '已取消錄製。')
+    setStatus(recorder, t('settings.cancelled'))
     return
   }
   if (event.repeat || pressedCodes.has(event.code)) return
@@ -208,11 +211,18 @@ window.addEventListener('blur', () => {
   if (!activeRecorder) return
   const recorder = activeRecorder
   stopRecording()
-  setStatus(recorder, '視窗失去焦點，已取消錄製。')
+  setStatus(recorder, t('settings.blurCancelled'))
 })
 
 opacityInput.addEventListener('input', async () => {
   updateOpacityDisplay()
   await window.floadeSettings.setOpacity(Number(opacityInput.value) / 100)
 })
+languageSelect.addEventListener('change', async () => {
+  const result = await window.floadeSettings.setLanguage(languageSelect.value)
+  languageSelect.value = result.language
+  window.floadeI18n.setLocale(result.effectiveLanguage)
+  renderAll()
+})
+window.addEventListener('floade-locale-changed', renderAll)
 closeButton.addEventListener('click', () => window.floadeSettings.close())

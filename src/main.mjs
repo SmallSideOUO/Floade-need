@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { createScreenTranslator } from './screen-translator.mjs'
+import { normalizeLocale, translate } from './i18n-main.mjs'
 
 const execFileAsync = promisify(execFile)
 const commitMessage = 'chore: sync data'
@@ -28,6 +29,7 @@ if (!app.requestSingleInstanceLock()) {
   let settings = {
     shortcut: null,
     translationShortcut: 'Alt+Shift+T',
+    language: 'system',
     opacity: 1
   }
   const pushingFolders = new Set()
@@ -55,19 +57,34 @@ if (!app.requestSingleInstanceLock()) {
         translationShortcut: typeof config.settings?.translationShortcut === 'string'
           ? config.settings.translationShortcut
           : 'Alt+Shift+T',
+        language: ['system', 'en', 'zh-TW'].includes(config.settings?.language)
+          ? config.settings.language
+          : 'system',
         opacity: Number.isFinite(config.settings?.opacity)
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1
       }
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', opacity: 1 }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1 }
     }
   }
 
   function saveFolders() {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
     fs.writeFileSync(configFile, `${JSON.stringify({ folders, settings }, null, 2)}\n`, 'utf8')
+  }
+
+  function effectiveLocale() {
+    return settings.language === 'system' ? normalizeLocale(app.getLocale()) : settings.language
+  }
+
+  function tr(key, variables) {
+    return translate(effectiveLocale(), key, variables)
+  }
+
+  function localizedQuery(query = {}) {
+    return { ...query, lang: effectiveLocale() }
   }
 
   function showDeletePrompt(folderPath) {
@@ -111,7 +128,7 @@ if (!app.requestSingleInstanceLock()) {
         window.focus()
       })
       window.loadFile(path.join(app.getAppPath(), 'src', 'delete-dialog.html'), {
-        query: { folder: folderPath }
+        query: localizedQuery({ folder: folderPath })
       })
     })
   }
@@ -145,6 +162,7 @@ if (!app.requestSingleInstanceLock()) {
     window.once('ready-to-show', () => window.showInactive())
     window.loadFile(path.join(app.getAppPath(), 'src', 'toast.html'), {
       query: {
+        ...localizedQuery(),
         title,
         message,
         type,
@@ -203,7 +221,9 @@ if (!app.requestSingleInstanceLock()) {
         window.show()
         window.focus()
       })
-      window.loadFile(path.join(app.getAppPath(), 'src', 'link-dialog.html'))
+      window.loadFile(path.join(app.getAppPath(), 'src', 'link-dialog.html'), {
+        query: localizedQuery()
+      })
     })
   }
 
@@ -286,14 +306,16 @@ if (!app.requestSingleInstanceLock()) {
         })
       } catch (error) {
         if (!window.isDestroyed()) window.close()
-        showToast('預覽失敗', commandErrorMessage(error), 'error')
+        showToast(tr('preview.failed'), commandErrorMessage(error), 'error')
       }
     })
     window.once('ready-to-show', () => {
       window.show()
       window.focus()
     })
-    window.loadFile(path.join(app.getAppPath(), 'src', 'markdown-preview.html'))
+    window.loadFile(path.join(app.getAppPath(), 'src', 'markdown-preview.html'), {
+      query: localizedQuery()
+    })
   }
 
   async function syncFolderForPreview(folder) {
@@ -337,7 +359,7 @@ if (!app.requestSingleInstanceLock()) {
 
   async function showPreviewPicker(folder) {
     if (!fs.existsSync(folder.path)) {
-      showToast('預覽失敗', '找不到這個資料夾。', 'error')
+      showToast(tr('preview.failed'), tr('folder.missing'), 'error')
       return
     }
 
@@ -349,11 +371,16 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     if (folder.repo) {
-      const processingToast = showToast('讀取 Markdown', `${folder.repo} 正在檢查更新…`, 'loading', 0)
+      const processingToast = showToast(
+        tr('markdown.reading'),
+        tr('markdown.checking', { repo: folder.repo }),
+        'loading',
+        0
+      )
       try {
         await syncFolderForPreview(folder)
       } catch (error) {
-        showToast('同步失敗', commandErrorMessage(error), 'error')
+        showToast(tr('sync.failed'), commandErrorMessage(error), 'error')
       } finally {
         if (!processingToast.isDestroyed()) processingToast.close()
       }
@@ -363,7 +390,7 @@ if (!app.requestSingleInstanceLock()) {
     try {
       markdownFiles = await findMarkdownFiles(folder.path)
     } catch (error) {
-      showToast('預覽失敗', commandErrorMessage(error), 'error')
+      showToast(tr('preview.failed'), commandErrorMessage(error), 'error')
       return
     }
 
@@ -406,7 +433,9 @@ if (!app.requestSingleInstanceLock()) {
       window.show()
       window.focus()
     })
-    window.loadFile(path.join(app.getAppPath(), 'src', 'preview-picker.html'))
+    window.loadFile(path.join(app.getAppPath(), 'src', 'preview-picker.html'), {
+      query: localizedQuery()
+    })
   }
 
   function openFloadeMenu() {
@@ -438,7 +467,7 @@ if (!app.requestSingleInstanceLock()) {
     return {
       success: false,
       shortcut: settings.shortcut,
-      message: '這組快捷鍵已被其他程式使用。'
+      message: tr('shortcut.conflict')
     }
   }
 
@@ -466,7 +495,7 @@ if (!app.requestSingleInstanceLock()) {
     return {
       success: false,
       shortcut: settings.translationShortcut,
-      message: '這組快捷鍵已被其他程式使用。'
+      message: tr('shortcut.conflict')
     }
   }
 
@@ -478,6 +507,21 @@ if (!app.requestSingleInstanceLock()) {
     }
     saveFolders()
     return opacity
+  }
+
+  function setLanguage(value) {
+    settings.language = ['system', 'en', 'zh-TW'].includes(value) ? value : 'system'
+    saveFolders()
+    refreshTrayMenu()
+    const locale = effectiveLocale()
+    for (const window of BrowserWindow.getAllWindows()) {
+      if (!window.isDestroyed()) {
+        void window.webContents
+          .executeJavaScript(`window.floadeI18n?.setLocale(${JSON.stringify(locale)})`)
+          .catch(() => {})
+      }
+    }
+    return { language: settings.language, effectiveLanguage: locale }
   }
 
   function showSettings() {
@@ -509,13 +553,18 @@ if (!app.requestSingleInstanceLock()) {
 
     settingsWindow.on('closed', () => { settingsWindow = undefined })
     settingsWindow.webContents.once('did-finish-load', () => {
-      settingsWindow.webContents.send('settings:state', settings)
+      settingsWindow.webContents.send('settings:state', {
+        ...settings,
+        effectiveLanguage: effectiveLocale()
+      })
     })
     settingsWindow.once('ready-to-show', () => {
       settingsWindow.show()
       settingsWindow.focus()
     })
-    settingsWindow.loadFile(path.join(app.getAppPath(), 'src', 'settings.html'))
+    settingsWindow.loadFile(path.join(app.getAppPath(), 'src', 'settings.html'), {
+      query: localizedQuery()
+    })
   }
 
   function registerSettingsHandlers() {
@@ -532,6 +581,13 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('settings:set-opacity', (event, opacity) => {
       if (event.sender !== settingsWindow?.webContents) return settings.opacity
       return setGlobalOpacity(opacity)
+    })
+
+    ipcMain.handle('settings:set-language', (event, language) => {
+      if (event.sender !== settingsWindow?.webContents) {
+        return { language: settings.language, effectiveLanguage: effectiveLocale() }
+      }
+      return setLanguage(language)
     })
 
     ipcMain.handle('settings:close', event => {
@@ -579,7 +635,7 @@ if (!app.requestSingleInstanceLock()) {
 
     ipcMain.handle('preview:save', async (event, content) => {
       const filePath = previewFiles.get(event.sender.id)
-      if (!filePath || typeof content !== 'string') throw new Error('找不到 Markdown 檔案。')
+      if (!filePath || typeof content !== 'string') throw new Error(tr('markdown.missing'))
       await fs.promises.writeFile(filePath, content, 'utf8')
       refreshTrayMenu()
       return true
@@ -609,7 +665,7 @@ if (!app.requestSingleInstanceLock()) {
         .sort((left, right) => left.localeCompare(right))
 
       if (repositories.length === 0) {
-        showToast('Link 失敗', '目前登入的 GitHub 帳號沒有 Private Repo。', 'error')
+        showToast(tr('link.failed'), tr('link.noPrivateRepos'), 'error')
         return
       }
 
@@ -619,13 +675,13 @@ if (!app.requestSingleInstanceLock()) {
       saveFolders()
       refreshTrayMenu()
     } catch (error) {
-      showToast('Link 失敗', commandErrorMessage(error), 'error')
+      showToast(tr('link.failed'), commandErrorMessage(error), 'error')
     }
   }
 
   function commandErrorMessage(error) {
     const output = `${error?.stderr ?? ''}`.trim() || `${error?.message ?? error}`.trim()
-    return output.split(/\r?\n/).filter(Boolean).at(-1) ?? '發生未知錯誤。'
+    return output.split(/\r?\n/).filter(Boolean).at(-1) ?? tr('error.unknown')
   }
 
   async function command(command, args, cwd) {
@@ -643,7 +699,12 @@ if (!app.requestSingleInstanceLock()) {
     }
     pushingFolders.add(folder.path)
     refreshTrayMenu()
-    const processingToast = showToast('Push 處理中', `${folder.repo} 正在同步…`, 'loading', 0)
+    const processingToast = showToast(
+      tr('push.processing'),
+      tr('push.syncing', { repo: folder.repo }),
+      'loading',
+      0
+    )
 
     try {
       await command('gh', ['auth', 'setup-git'], folder.path)
@@ -683,10 +744,10 @@ if (!app.requestSingleInstanceLock()) {
       await command('git', ['branch', '-M', 'main'], folder.path)
       await command('git', ['push', '-u', 'origin', 'main'], folder.path)
       if (!processingToast.isDestroyed()) processingToast.close()
-      showToast('Push 完成', `${folder.repo} 已同步。`, 'success')
+      showToast(tr('push.completed'), tr('push.synced', { repo: folder.repo }), 'success')
     } catch (error) {
       if (!processingToast.isDestroyed()) processingToast.close()
-      showToast('Push 失敗', commandErrorMessage(error), 'error')
+      showToast(tr('push.failed'), commandErrorMessage(error), 'error')
     } finally {
       if (!processingToast.isDestroyed()) processingToast.close()
       pushingFolders.delete(folder.path)
@@ -696,7 +757,7 @@ if (!app.requestSingleInstanceLock()) {
 
   async function addFolder() {
     const result = await dialog.showOpenDialog({
-      title: '新增資料夾',
+      title: tr('folder.add'),
       properties: ['openDirectory']
     })
 
@@ -760,21 +821,21 @@ if (!app.requestSingleInstanceLock()) {
       ? folders.map(folder => {
           const submenu = Menu.buildFromTemplate([
             {
-              label: '預覽',
+              label: tr('menu.preview'),
               click: () => showPreviewPicker(folder)
             },
             {
-              label: pushingFolders.has(folder.path) ? 'Push 中…' : 'Push',
+              label: pushingFolders.has(folder.path) ? tr('menu.pushing') : tr('menu.push'),
               enabled: hasPushableChanges(folder),
               click: () => pushFolder(folder)
             },
             {
-              label: folder.repo ? `Link：${folder.repo}` : 'Link',
+              label: folder.repo ? `${tr('menu.link')}：${folder.repo}` : tr('menu.link'),
               click: () => linkFolder(folder)
             },
             { type: 'separator' },
             {
-              label: '刪除',
+              label: tr('menu.delete'),
               click: () => removeFolder(folder)
             }
           ])
@@ -785,34 +846,34 @@ if (!app.requestSingleInstanceLock()) {
             submenu
           }
         })
-      : [{ label: '目前沒有資料夾', enabled: false }]
+      : [{ label: tr('menu.noFolders'), enabled: false }]
 
     const menu = Menu.buildFromTemplate([
       {
-        label: '新增資料夾',
+        label: tr('menu.addFolder'),
         click: addFolder
       },
       { type: 'separator' },
       ...folderItems,
       { type: 'separator' },
       {
-        label: '畫面翻譯',
+        label: tr('menu.screenTranslate'),
         click: () => screenTranslator?.start()
       },
       {
-        label: '設定',
+        label: tr('menu.settings'),
         click: showSettings
       },
       { type: 'separator' },
       {
-        label: '退出',
+        label: tr('menu.quit'),
         click: () => app.quit()
       }
     ])
 
     menu.on('menu-will-show', () => {
       for (const { folder, pushItem } of pushItems) {
-        pushItem.label = pushingFolders.has(folder.path) ? 'Push 中…' : 'Push'
+        pushItem.label = pushingFolders.has(folder.path) ? tr('menu.pushing') : tr('menu.push')
         pushItem.enabled = hasPushableChanges(folder)
       }
     })
@@ -835,7 +896,9 @@ if (!app.requestSingleInstanceLock()) {
       userDataPath: app.getPath('userData'),
       iconPath: windowIconPath,
       getOpacity: () => settings.opacity,
-      showToast
+      getLocale: effectiveLocale,
+      showToast,
+      translateUi: tr
     })
     screenTranslator.registerIpc()
     registerSettingsHandlers()
@@ -862,11 +925,11 @@ if (!app.requestSingleInstanceLock()) {
     refreshTrayMenu()
     if (settings.shortcut) {
       const result = setGlobalShortcut(settings.shortcut)
-      if (!result.success) showToast('快捷鍵失敗', result.message, 'error')
+      if (!result.success) showToast(tr('shortcut.failed'), result.message, 'error')
     }
     if (settings.translationShortcut) {
       const result = setTranslationShortcut(settings.translationShortcut)
-      if (!result.success) showToast('翻譯快捷鍵失敗', result.message, 'error')
+      if (!result.success) showToast(tr('translationShortcut.failed'), result.message, 'error')
     }
   })
 

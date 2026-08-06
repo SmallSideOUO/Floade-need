@@ -30,25 +30,13 @@ function translatedText(payload) {
     .trim()
 }
 
-function languageName(code) {
-  const names = {
-    en: '英文',
-    'zh-CN': '簡體中文',
-    'zh-TW': '繁體中文',
-    zh: '中文',
-    ja: '日文',
-    ko: '韓文',
-    fr: '法文',
-    de: '德文',
-    es: '西班牙文',
-    it: '義大利文',
-    pt: '葡萄牙文',
-    ru: '俄文'
-  }
-  return names[code] ?? code ?? '自動偵測'
+function languageName(code, translateUi) {
+  if (!code) return translateUi('language.auto')
+  const knownCodes = new Set(['en', 'zh-CN', 'zh-TW', 'zh', 'ja', 'ko', 'fr', 'de', 'es', 'it', 'pt', 'ru'])
+  return knownCodes.has(code) ? translateUi(`language.${code}`) : code
 }
 
-export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpacity, showToast }) {
+export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpacity, getLocale, showToast, translateUi }) {
   let captureState
   let busy = false
   let workerPromise
@@ -86,7 +74,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       body,
       signal: AbortSignal.timeout(20_000)
     })
-    if (!response.ok) throw new Error(`Google 翻譯回應 ${response.status}`)
+    if (!response.ok) throw new Error(translateUi('translator.httpError', { status: response.status }))
     return response.json()
   }
 
@@ -97,14 +85,14 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     const targetLanguage = sourceIsChinese ? 'en' : 'zh-TW'
     const payload = sourceIsChinese ? englishProbe : await googleRequest(text, targetLanguage)
     const translation = translatedText(payload)
-    if (!translation) throw new Error('Google 沒有回傳翻譯結果。')
+    if (!translation) throw new Error(translateUi('translator.emptyResult'))
     return {
       translation,
       detectedLanguage,
       sourceLanguage: detectedLanguage,
-      sourceLanguageName: languageName(detectedLanguage),
+      sourceLanguageName: languageName(detectedLanguage, translateUi),
       targetLanguage,
-      targetLanguageName: languageName(targetLanguage)
+      targetLanguageName: languageName(targetLanguage, translateUi)
     }
   }
 
@@ -112,15 +100,15 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     const source = sourceLanguage || 'auto'
     const payload = await googleRequest(text, targetLanguage, source)
     const translation = translatedText(payload)
-    if (!translation) throw new Error('Google 沒有回傳翻譯結果。')
+    if (!translation) throw new Error(translateUi('translator.emptyResult'))
     const detectedLanguage = payload?.[2] ?? (source === 'auto' ? '' : source)
     return {
       translation,
       detectedLanguage,
       sourceLanguage: source === 'auto' ? detectedLanguage : source,
-      sourceLanguageName: languageName(source === 'auto' ? detectedLanguage : source),
+      sourceLanguageName: languageName(source === 'auto' ? detectedLanguage : source, translateUi),
       targetLanguage,
-      targetLanguageName: languageName(targetLanguage)
+      targetLanguageName: languageName(targetLanguage, translateUi)
     }
   }
 
@@ -156,11 +144,18 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       window.show()
       window.focus()
     })
-    window.loadFile(path.join(appPath, 'src', 'translation-result.html'))
+    window.loadFile(path.join(appPath, 'src', 'translation-result.html'), {
+      query: { lang: getLocale() }
+    })
   }
 
   async function recognizeAndTranslate(image) {
-    const processingToast = showToast('OCR 翻譯中', '正在本機辨識文字並翻譯…', 'loading', 0)
+    const processingToast = showToast(
+      translateUi('translator.processing'),
+      translateUi('translator.processingMessage'),
+      'loading',
+      0
+    )
     try {
       const size = image.getSize()
       const scale = size.width < 1200 ? Math.min(2, 1800 / Math.max(size.width, 1)) : 1
@@ -170,7 +165,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       const worker = await ensureWorker()
       const result = await worker.recognize(input.toPNG())
       const sourceText = cleanOcrText(result.data.text)
-      if (!sourceText) throw new Error('框選範圍內沒有辨識到文字。')
+      if (!sourceText) throw new Error(translateUi('translator.noText'))
       const translated = await translate(sourceText)
       if (!processingToast.isDestroyed()) processingToast.close()
       openResult({
@@ -180,7 +175,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       })
     } catch (error) {
       if (!processingToast.isDestroyed()) processingToast.close()
-      showToast('翻譯失敗', error?.message ?? String(error), 'error')
+      showToast(translateUi('translator.failed'), error?.message ?? String(error), 'error')
     } finally {
       busy = false
     }
@@ -196,7 +191,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       thumbnailSize: requestedSize
     })
     const source = sources.find(candidate => candidate.display_id === String(display.id)) ?? sources[0]
-    if (!source || source.thumbnail.isEmpty()) throw new Error('讀取螢幕畫面失敗。')
+    if (!source || source.thumbnail.isEmpty()) throw new Error(translateUi('translator.captureUnavailable'))
     return source.thumbnail
   }
 
@@ -229,7 +224,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       void recognizeAndTranslate(cropped)
     } catch (error) {
       busy = false
-      showToast('畫面翻譯失敗', error?.message ?? String(error), 'error')
+      showToast(translateUi('translator.captureFailed'), error?.message ?? String(error), 'error')
     }
   }
 
@@ -273,14 +268,16 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
           busy = false
         }
       })
-      await window.loadFile(path.join(appPath, 'src', 'capture-overlay.html'))
+      await window.loadFile(path.join(appPath, 'src', 'capture-overlay.html'), {
+        query: { lang: getLocale() }
+      })
       if (!window.isDestroyed()) {
         window.show()
         window.focus()
       }
     } catch (error) {
       busy = false
-      showToast('畫面翻譯失敗', error?.message ?? String(error), 'error')
+      showToast(translateUi('translator.captureFailed'), error?.message ?? String(error), 'error')
     }
   }
 
@@ -304,11 +301,13 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       return true
     })
     ipcMain.handle('translation-result:translate', async (event, request) => {
-      if (!resultWindows.has(event.sender.id)) return { success: false, message: '找不到翻譯視窗。' }
+      if (!resultWindows.has(event.sender.id)) {
+        return { success: false, message: translateUi('translator.windowMissing') }
+      }
       const text = typeof request?.text === 'string' ? request.text.trim() : ''
       const sourceLanguage = typeof request?.sourceLanguage === 'string' ? request.sourceLanguage : 'auto'
       const targetLanguage = typeof request?.targetLanguage === 'string' ? request.targetLanguage : 'zh-TW'
-      if (!text) return { success: false, message: '請先輸入要翻譯的內容。' }
+      if (!text) return { success: false, message: translateUi('translator.inputRequired') }
       try {
         return { success: true, ...(await translateTo(text, sourceLanguage, targetLanguage)) }
       } catch (error) {

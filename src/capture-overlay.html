@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-title-i18n="capture.title">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,7 +8,8 @@
   </head>
   <body>
     <div id="selection" hidden></div>
-    <div id="tip">拖曳框選要翻譯的文字 <span>Esc 取消</span></div>
+    <div id="tip"><span class="tip-main" data-i18n="capture.tip">拖曳框選要翻譯的文字</span><span data-i18n="capture.cancel">Esc 取消</span></div>
+    <script src="./i18n-renderer.js"></script>
     <script src="./capture-overlay.js"></script>
   </body>
 </html>

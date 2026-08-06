@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" data-title-i18n="delete.title">
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,16 +14,17 @@
       </header>
 
       <section>
-        <h1 id="title">移除這個資料夾？</h1>
+          <h1 id="title" data-i18n="delete.heading">移除這個資料夾？</h1>
         <p id="folder" class="folder"></p>
-        <p class="note">只會從 Floade 選單移除，本機檔案不會被刪除。</p>
+        <p class="note" data-i18n="delete.note">只會從 Floade 選單移除，本機檔案不會被刪除。</p>
       </section>
 
       <footer>
-        <button id="cancel" class="secondary" type="button">取消</button>
-        <button id="delete" class="danger" type="button">移除</button>
+        <button id="cancel" class="secondary" type="button" data-i18n="common.cancel">取消</button>
+        <button id="delete" class="danger" type="button" data-i18n="delete.remove">移除</button>
       </footer>
     </main>
+    <script src="./i18n-renderer.js"></script>
     <script src="./delete-dialog.js"></script>
   </body>
 </html>

@@ -7,10 +7,11 @@ const pinButton = document.querySelector('#pin')
 const closeButton = document.querySelector('#close')
 let files = []
 const selectedFiles = new Set()
+const t = (key, variables) => window.floadeI18n.t(key, variables)
 
 function updateSelection() {
   const count = selectedFiles.size
-  countLabel.textContent = count === 0 ? '尚未選擇' : `已選擇 ${count} 個檔案`
+  countLabel.textContent = count === 0 ? t('picker.noneSelected') : t('picker.selected', { count })
   openButton.disabled = count === 0
 }
 
@@ -22,7 +23,7 @@ function render() {
   if (visibleFiles.length === 0) {
     const empty = document.createElement('div')
     empty.className = 'empty'
-    empty.textContent = files.length === 0 ? '這個資料夾裡沒有 Markdown' : '找不到 Markdown'
+    empty.textContent = files.length === 0 ? t('picker.emptyFolder') : t('picker.notFound')
     fileList.append(empty)
     return
   }
@@ -55,7 +56,7 @@ window.floadePicker.onFiles(payload => {
   folderLabel.textContent = payload.folder
   folderLabel.title = payload.folder
   pinButton.classList.toggle('active', payload.pinned)
-  pinButton.title = payload.pinned ? '取消置頂' : '置頂'
+  pinButton.title = payload.pinned ? t('common.unpin') : t('common.pin')
   render()
   updateSelection()
   search.focus()
@@ -68,9 +69,14 @@ openButton.addEventListener('click', async () => {
 pinButton.addEventListener('click', async () => {
   const pinned = await window.floadePicker.togglePin()
   pinButton.classList.toggle('active', pinned)
-  pinButton.title = pinned ? '取消置頂' : '置頂'
+  pinButton.title = pinned ? t('common.unpin') : t('common.pin')
 })
 closeButton.addEventListener('click', () => window.floadePicker.close())
+window.addEventListener('floade-locale-changed', () => {
+  render()
+  updateSelection()
+  pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
+})
 window.addEventListener('keydown', event => {
   if (event.key === 'Escape') window.floadePicker.close()
 })

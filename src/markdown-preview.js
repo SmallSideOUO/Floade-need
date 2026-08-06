@@ -7,29 +7,33 @@ const closeButton = document.querySelector('#close')
 let saveTimer
 let loaded = false
 let lastSavedContent = ''
+let statusKey = 'preview.loaded'
+const t = key => window.floadeI18n.t(key)
+
+function setStatus(key, className = '') {
+  statusKey = key
+  status.textContent = t(key)
+  status.className = className
+}
 
 async function save() {
   clearTimeout(saveTimer)
   if (!loaded || editor.value === lastSavedContent) return true
   const content = editor.value
-  status.textContent = '儲存中…'
-  status.className = 'saving'
+  setStatus('preview.saving', 'saving')
 
   try {
     await window.floadePreview.save(content)
     lastSavedContent = content
     if (editor.value === content) {
-      status.textContent = '已儲存'
-      status.className = ''
+      setStatus('preview.saved')
     } else {
-      status.textContent = '尚未儲存'
-      status.className = ''
+      setStatus('preview.unsaved')
       saveTimer = setTimeout(save, 450)
     }
     return true
   } catch {
-    status.textContent = '儲存失敗'
-    status.className = 'error'
+    setStatus('preview.saveFailed', 'error')
     return false
   }
 }
@@ -41,14 +45,13 @@ window.floadePreview.onDocument(document => {
   editor.value = document.content
   lastSavedContent = document.content
   pinButton.classList.toggle('active', document.pinned)
-  pinButton.title = document.pinned ? '取消置頂' : '置頂'
+  pinButton.title = document.pinned ? t('common.unpin') : t('common.pin')
   loaded = true
   editor.focus()
 })
 
 editor.addEventListener('input', () => {
-  status.textContent = '尚未儲存'
-  status.className = ''
+  setStatus('preview.unsaved')
   clearTimeout(saveTimer)
   saveTimer = setTimeout(save, 450)
 })
@@ -66,7 +69,7 @@ editor.addEventListener('keydown', event => {
 pinButton.addEventListener('click', async () => {
   const pinned = await window.floadePreview.togglePin()
   pinButton.classList.toggle('active', pinned)
-  pinButton.title = pinned ? '取消置頂' : '置頂'
+  pinButton.title = pinned ? t('common.unpin') : t('common.pin')
 })
 
 closeButton.addEventListener('click', async () => {
@@ -84,4 +87,8 @@ window.addEventListener('beforeunload', () => {
   if (loaded && editor.value !== lastSavedContent) {
     window.floadePreview.saveSync(editor.value)
   }
+})
+window.addEventListener('floade-locale-changed', () => {
+  status.textContent = t(statusKey)
+  pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
 })
