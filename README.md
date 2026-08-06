@@ -4,7 +4,7 @@
 
 Floade is a tiny system-tray app that links local folders to private GitHub repositories and pushes every local change in one click.
 
-It has no main window. Start it with `floade`, then use the tray menu to add folders, link repositories, push changes, or quit.
+It has no main window. Launch it from the Windows Start menu or run `floade`, then use the tray menu to add folders, link repositories, push changes, or quit.
 
 ## Why I built Floade
 
@@ -39,6 +39,14 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Keeps linked folder paths locally; GitHub credentials remain managed by GitHub CLI
 - Supports `floade`, `floade stop`, and `floade restart`
 
+## Screenshots
+
+| Tray workflow | Editable Markdown |
+| --- | --- |
+| ![Floade tray menu](docs/images/tray-menu.png) | ![Floade Markdown window](docs/images/markdown.png) |
+| Settings | OCR translation |
+| ![Floade settings](docs/images/settings.png) | ![Floade translation window](docs/images/translation.png) |
+
 ## Security warning
 
 Floade **does not encrypt your files**. It stages and commits every file in a linked folder, except files already excluded by that folder's `.gitignore`.
@@ -53,13 +61,26 @@ Before pushing sensitive data:
 
 ## Requirements
 
-- Node.js 22 or newer
+- Windows 10 or newer for the installer
 - Git
 - [GitHub CLI](https://cli.github.com/) authenticated with `gh auth login`
+- Node.js 22 or newer only when installing from the command line
 
 The current release has been tested on Windows. The runtime uses Electron's cross-platform tray APIs, but macOS and Linux packaging and QA are still pending.
 
-## Install from GitHub
+## Install
+
+### Windows installer
+
+Download and run the latest `Floade-Setup-*.exe` from [GitHub Releases](https://github.com/SmallSideOUO/Floade-need/releases/latest). The current installer is not code-signed, so Windows SmartScreen may display a warning.
+
+### The easy way
+
+Tell Codex or Claude Code:
+
+> Install Floade for me: https://github.com/SmallSideOUO/Floade-need
+
+### The command-line way
 
 ```powershell
 npm install --global github:SmallSideOUO/Floade-need

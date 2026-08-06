@@ -888,7 +888,7 @@ if (!app.requestSingleInstanceLock()) {
   app.on('window-all-closed', () => {})
 
   app.whenReady().then(() => {
-    if (process.platform === 'win32') app.setAppUserModelId('com.floade.local-data')
+    if (process.platform === 'win32') app.setAppUserModelId('com.smallside.floade')
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
     screenTranslator = createScreenTranslator({

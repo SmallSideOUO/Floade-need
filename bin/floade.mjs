@@ -8,7 +8,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
-const electron = require('electron')
+const electron = require('electron-runtime')
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const controlSocket = process.platform === 'win32'
   ? '\\\\.\\pipe\\floade-local-data-control'

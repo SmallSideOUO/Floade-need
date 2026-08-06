@@ -4,7 +4,7 @@
 
 Floade 是一個小型系統匣工具，可以把本機資料夾連結到 GitHub Private Repo，並用一次點擊 Push 所有本機變更。
 
-Floade 沒有主視窗。執行 `floade` 後，從系統匣選單新增資料夾、連結 Repo、Push 變更或退出即可。
+Floade 沒有主視窗。你可以從 Windows 開始選單啟動，或執行 `floade`，再從系統匣選單新增資料夾、連結 Repo、Push 變更或退出。
 
 ## 我為什麼做 Floade
 
@@ -39,6 +39,14 @@ Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；�
 - 連結的資料夾路徑只儲存在本機；GitHub 憑證仍由 GitHub CLI 管理
 - 支援 `floade`、`floade stop` 及 `floade restart`
 
+## 介面截圖
+
+| 系統匣操作 | 可編輯 Markdown |
+| --- | --- |
+| ![Floade 系統匣選單](docs/images/tray-menu.png) | ![Floade Markdown 視窗](docs/images/markdown.png) |
+| 設定 | OCR 翻譯 |
+| ![Floade 設定](docs/images/settings.png) | ![Floade 翻譯視窗](docs/images/translation.png) |
+
 ## 安全警告
 
 Floade **不會加密你的檔案**。除了資料夾 `.gitignore` 已排除的內容之外，Floade 會 Stage 並 Commit 連結資料夾中的所有檔案。
@@ -53,13 +61,26 @@ Push 敏感資料前請注意：
 
 ## 系統需求
 
-- Node.js 22 或更新版本
+- 使用安裝檔時需要 Windows 10 或更新版本
 - Git
 - 已透過 `gh auth login` 登入的 [GitHub CLI](https://cli.github.com/)
+- 只有透過指令安裝時才需要 Node.js 22 或更新版本
 
 目前版本已在 Windows 測試。執行環境使用 Electron 的跨平台系統匣 API，但 macOS 與 Linux 的打包及 QA 尚未完成。
 
-## 從 GitHub 安裝
+## 安裝
+
+### Windows 安裝檔
+
+從 [GitHub Releases](https://github.com/SmallSideOUO/Floade-need/releases/latest) 下載最新版 `Floade-Setup-*.exe` 並執行。目前安裝檔尚未進行程式碼簽章，因此 Windows SmartScreen 可能會顯示警告。
+
+### 簡單的方法
+
+直接跟 Codex 或 Claude Code 說：
+
+> 幫我安裝 Floade：https://github.com/SmallSideOUO/Floade-need
+
+### 指令安裝
 
 ```powershell
 npm install --global github:SmallSideOUO/Floade-need
