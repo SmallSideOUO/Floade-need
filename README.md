@@ -30,6 +30,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Supports always-on-top controls in both the Markdown picker and document windows
 - Provides a global shortcut recorder with chords of up to three keys
 - Translates a dragged screen region with bundled local OCR and Google Translate
+- Lets translation windows change or swap languages and edit both the source and translated text
 - Applies one configurable opacity level to every Floade window
 - Uses the current GitHub CLI login to list private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`

@@ -11,24 +11,32 @@
       <header>
         <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade 翻譯</span></div>
         <div class="window-actions">
-          <button id="pin" type="button" title="置頂" aria-label="置頂">⌖</button>
-          <button id="close" type="button" title="關閉" aria-label="關閉">×</button>
+          <button id="pin" class="icon-button" type="button" title="置頂" aria-label="置頂">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3h6l-1 5 3 3v2h-4v8l-2-2v-6H7v-2l3-3-1-5Z"/></svg>
+          </button>
+          <button id="close" class="close" type="button" title="關閉" aria-label="關閉">×</button>
         </div>
       </header>
       <section class="content">
         <div class="language-row">
-          <span id="source-language">自動偵測</span><b>→</b><span id="target-language">繁體中文</span>
+          <select id="source-language" aria-label="來源語言">
+            <option value="auto">自動偵測</option>
+          </select>
+          <button id="swap" type="button" title="翻轉語言" aria-label="翻轉語言">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3 1.4-1.4L22 8l-5.6 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2 16l5.6-5.4L9 12l-3 3h11v2Z"/></svg>
+          </button>
+          <select id="target-language" aria-label="目標語言"></select>
           <small id="confidence"></small>
         </div>
-        <article>
-          <div class="section-title"><h2>翻譯</h2><button id="copy" type="button">複製</button></div>
-          <div id="translation" class="text result"></div>
-        </article>
         <article class="source-card">
           <div class="section-title"><h2>OCR 原文</h2></div>
-          <div id="source" class="text"></div>
+          <textarea id="source" class="text" aria-label="原文" spellcheck="true"></textarea>
         </article>
-        <p class="provider">本機 OCR · Google 翻譯</p>
+        <article class="translation-card">
+          <div class="section-title"><h2>翻譯</h2><button id="copy" type="button">複製</button></div>
+          <textarea id="translation" class="text result" aria-label="翻譯內容" spellcheck="true"></textarea>
+        </article>
+        <div class="footer-row"><p class="provider">本機 OCR · Google 翻譯</p><p id="status" aria-live="polite"></p></div>
       </section>
     </main>
     <script src="./translation-result.js"></script>

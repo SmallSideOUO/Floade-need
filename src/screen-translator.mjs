@@ -70,10 +70,10 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     return workerPromise
   }
 
-  async function googleRequest(text, target) {
+  async function googleRequest(text, target, source = 'auto') {
     const body = new URLSearchParams({
       client: 'gtx',
-      sl: 'auto',
+      sl: source,
       tl: target,
       dt: 't',
       q: text
@@ -91,7 +91,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   }
 
   async function translate(text) {
-    const englishProbe = await googleRequest(text, 'en')
+    const englishProbe = await googleRequest(text, 'en', 'auto')
     const detectedLanguage = englishProbe?.[2] ?? ''
     const sourceIsChinese = detectedLanguage === 'zh' || detectedLanguage.startsWith('zh-')
     const targetLanguage = sourceIsChinese ? 'en' : 'zh-TW'
@@ -101,7 +101,24 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     return {
       translation,
       detectedLanguage,
+      sourceLanguage: detectedLanguage,
       sourceLanguageName: languageName(detectedLanguage),
+      targetLanguage,
+      targetLanguageName: languageName(targetLanguage)
+    }
+  }
+
+  async function translateTo(text, sourceLanguage, targetLanguage) {
+    const source = sourceLanguage || 'auto'
+    const payload = await googleRequest(text, targetLanguage, source)
+    const translation = translatedText(payload)
+    if (!translation) throw new Error('Google 沒有回傳翻譯結果。')
+    const detectedLanguage = payload?.[2] ?? (source === 'auto' ? '' : source)
+    return {
+      translation,
+      detectedLanguage,
+      sourceLanguage: source === 'auto' ? detectedLanguage : source,
+      sourceLanguageName: languageName(source === 'auto' ? detectedLanguage : source),
       targetLanguage,
       targetLanguageName: languageName(targetLanguage)
     }
@@ -110,11 +127,11 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   function openResult(data) {
     const window = new BrowserWindow({
       width: 560,
-      height: 500,
+      height: 400,
       icon: iconPath(),
       opacity: getOpacity(),
       minWidth: 390,
-      minHeight: 340,
+      minHeight: 300,
       frame: false,
       transparent: true,
       resizable: true,
@@ -285,6 +302,18 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       if (!resultWindows.has(event.sender.id) || typeof text !== 'string') return false
       clipboard.writeText(text)
       return true
+    })
+    ipcMain.handle('translation-result:translate', async (event, request) => {
+      if (!resultWindows.has(event.sender.id)) return { success: false, message: '找不到翻譯視窗。' }
+      const text = typeof request?.text === 'string' ? request.text.trim() : ''
+      const sourceLanguage = typeof request?.sourceLanguage === 'string' ? request.sourceLanguage : 'auto'
+      const targetLanguage = typeof request?.targetLanguage === 'string' ? request.targetLanguage : 'zh-TW'
+      if (!text) return { success: false, message: '請先輸入要翻譯的內容。' }
+      try {
+        return { success: true, ...(await translateTo(text, sourceLanguage, targetLanguage)) }
+      } catch (error) {
+        return { success: false, message: error?.message ?? String(error) }
+      }
     })
     ipcMain.handle('translation-result:close', event => {
       const window = resultWindows.get(event.sender.id)
