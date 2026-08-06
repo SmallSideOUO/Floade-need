@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Floade 翻譯</title>
+    <link rel="stylesheet" href="./translation-result.css">
+  </head>
+  <body>
+    <main class="window">
+      <header>
+        <div class="brand"><img src="../assets/tray.png" alt=""><span>Floade 翻譯</span></div>
+        <div class="window-actions">
+          <button id="pin" type="button" title="置頂" aria-label="置頂">⌖</button>
+          <button id="close" type="button" title="關閉" aria-label="關閉">×</button>
+        </div>
+      </header>
+      <section class="content">
+        <div class="language-row">
+          <span id="source-language">自動偵測</span><b>→</b><span id="target-language">繁體中文</span>
+          <small id="confidence"></small>
+        </div>
+        <article>
+          <div class="section-title"><h2>翻譯</h2><button id="copy" type="button">複製</button></div>
+          <div id="translation" class="text result"></div>
+        </article>
+        <article class="source-card">
+          <div class="section-title"><h2>OCR 原文</h2></div>
+          <div id="source" class="text"></div>
+        </article>
+        <p class="provider">本機 OCR · Google 翻譯</p>
+      </section>
+    </main>
+    <script src="./translation-result.js"></script>
+  </body>
+</html>

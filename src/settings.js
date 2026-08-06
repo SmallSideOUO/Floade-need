@@ -1,15 +1,30 @@
-const recordButton = document.querySelector('#record')
-const shortcutValue = document.querySelector('#shortcut-value')
-const shortcutHint = document.querySelector('#shortcut-hint')
-const shortcutStatus = document.querySelector('#shortcut-status')
-const clearShortcutButton = document.querySelector('#clear-shortcut')
 const opacityInput = document.querySelector('#opacity')
 const opacityValue = document.querySelector('#opacity-value')
 const closeButton = document.querySelector('#close')
-
 const modifierKeys = new Set(['CommandOrControl', 'Command', 'Alt', 'Shift'])
-let currentShortcut = null
-let recording = false
+
+const recorders = [
+  {
+    button: document.querySelector('#record'),
+    value: document.querySelector('#shortcut-value'),
+    hint: document.querySelector('#shortcut-hint'),
+    status: document.querySelector('#shortcut-status'),
+    clear: document.querySelector('#clear-shortcut'),
+    save: shortcut => window.floadeSettings.setShortcut(shortcut),
+    current: null
+  },
+  {
+    button: document.querySelector('#translation-record'),
+    value: document.querySelector('#translation-shortcut-value'),
+    hint: document.querySelector('#translation-shortcut-hint'),
+    status: document.querySelector('#translation-shortcut-status'),
+    clear: document.querySelector('#clear-translation-shortcut'),
+    save: shortcut => window.floadeSettings.setTranslationShortcut(shortcut),
+    current: null
+  }
+]
+
+let activeRecorder
 let recordedKeys = []
 let pressedCodes = new Set()
 let tooManyKeys = false
@@ -57,49 +72,59 @@ function normalizedKey(event) {
   return named ? { accelerator: named[0], label: named[1] } : null
 }
 
-function renderShortcut() {
-  shortcutValue.textContent = recording
-    ? recordedKeys.map(key => key.label).join(' + ') || '請按下快捷鍵'
-    : shortcutLabel(currentShortcut)
-  shortcutHint.textContent = recording ? '放開按鍵完成' : '點擊後錄製'
-  recordButton.classList.toggle('recording', recording)
-  clearShortcutButton.disabled = !currentShortcut || recording
+function setStatus(recorder, message = '', type = '') {
+  recorder.status.textContent = message
+  recorder.status.className = `status ${type}`.trim()
 }
 
-function setStatus(message = '', type = '') {
-  shortcutStatus.textContent = message
-  shortcutStatus.className = `status ${type}`.trim()
+function renderRecorder(recorder) {
+  const recording = activeRecorder === recorder
+  recorder.value.textContent = recording
+    ? recordedKeys.map(key => key.label).join(' + ') || '請按下快捷鍵'
+    : shortcutLabel(recorder.current)
+  recorder.hint.textContent = recording ? '放開按鍵完成' : '點擊後錄製'
+  recorder.button.classList.toggle('recording', recording)
+  recorder.clear.disabled = !recorder.current || recording
+}
+
+function renderAll() {
+  for (const recorder of recorders) renderRecorder(recorder)
 }
 
 function stopRecording() {
-  recording = false
+  activeRecorder = undefined
   recordedKeys = []
   pressedCodes = new Set()
   tooManyKeys = false
-  renderShortcut()
+  renderAll()
 }
 
-function startRecording() {
-  recording = true
+function startRecording(recorder) {
+  if (activeRecorder && activeRecorder !== recorder) {
+    setStatus(activeRecorder, '已取消錄製。')
+  }
+  activeRecorder = recorder
   recordedKeys = []
   pressedCodes = new Set()
   tooManyKeys = false
-  setStatus('一次按下最多三個按鍵；按 Esc 取消。')
-  renderShortcut()
-  recordButton.focus()
+  setStatus(recorder, '一次按下最多三個按鍵；按 Esc 取消。')
+  renderAll()
+  recorder.button.focus()
 }
 
 async function finishRecording() {
+  const recorder = activeRecorder
+  if (!recorder) return
   if (tooManyKeys) {
     stopRecording()
-    setStatus('快捷鍵最多只能包含三個按鍵。', 'error')
+    setStatus(recorder, '快捷鍵最多只能包含三個按鍵。', 'error')
     return
   }
 
   const hasRegularKey = recordedKeys.some(key => !modifierKeys.has(key.accelerator))
   if (!hasRegularKey) {
     stopRecording()
-    setStatus('快捷鍵需要包含一個非修飾鍵。', 'error')
+    setStatus(recorder, '快捷鍵需要包含一個非修飾鍵。', 'error')
     return
   }
 
@@ -107,15 +132,14 @@ async function finishRecording() {
   const regularKeys = recordedKeys.filter(key => !modifierKeys.has(key.accelerator))
   const accelerator = [...modifiers, ...regularKeys].map(key => key.accelerator).join('+')
   stopRecording()
-  const result = await window.floadeSettings.setShortcut(accelerator)
-  if (result.success) {
-    currentShortcut = result.shortcut
-    setStatus('快捷鍵已儲存。', 'success')
-  } else {
-    currentShortcut = result.shortcut
-    setStatus(result.message || '無法註冊這組快捷鍵。', 'error')
-  }
-  renderShortcut()
+  const result = await recorder.save(accelerator)
+  recorder.current = result.shortcut
+  setStatus(
+    recorder,
+    result.success ? '快捷鍵已儲存。' : result.message || '無法註冊這組快捷鍵。',
+    result.success ? 'success' : 'error'
+  )
+  renderRecorder(recorder)
 }
 
 function updateOpacityDisplay() {
@@ -126,25 +150,39 @@ function updateOpacityDisplay() {
 }
 
 window.floadeSettings.onState(state => {
-  currentShortcut = state.shortcut
-  const opacity = Math.round(state.opacity * 100)
-  opacityInput.value = String(opacity)
+  recorders[0].current = state.shortcut
+  recorders[1].current = state.translationShortcut
+  opacityInput.value = String(Math.round(state.opacity * 100))
   updateOpacityDisplay()
-  renderShortcut()
+  renderAll()
 })
 
-recordButton.addEventListener('click', () => {
-  if (recording) stopRecording()
-  else startRecording()
-})
+for (const recorder of recorders) {
+  recorder.button.addEventListener('click', () => {
+    if (activeRecorder === recorder) stopRecording()
+    else startRecording(recorder)
+  })
+  recorder.clear.addEventListener('click', async () => {
+    const result = await recorder.save(null)
+    if (result.success) {
+      recorder.current = null
+      setStatus(recorder, '已清除快捷鍵。', 'success')
+      renderRecorder(recorder)
+    }
+  })
+}
 
 window.addEventListener('keydown', event => {
-  if (!recording) return
+  if (!activeRecorder) {
+    if (event.key === 'Escape') window.floadeSettings.close()
+    return
+  }
   event.preventDefault()
   event.stopPropagation()
   if (event.key === 'Escape') {
+    const recorder = activeRecorder
     stopRecording()
-    setStatus('已取消錄製。')
+    setStatus(recorder, '已取消錄製。')
     return
   }
   if (event.repeat || pressedCodes.has(event.code)) return
@@ -156,38 +194,25 @@ window.addEventListener('keydown', event => {
     if (recordedKeys.length >= 3) tooManyKeys = true
     else recordedKeys.push(key)
   }
-  renderShortcut()
+  renderRecorder(activeRecorder)
 })
 
 window.addEventListener('keyup', event => {
-  if (!recording) return
+  if (!activeRecorder) return
   event.preventDefault()
   pressedCodes.delete(event.code)
-  if (pressedCodes.size === 0 && recordedKeys.length > 0) finishRecording()
+  if (pressedCodes.size === 0 && recordedKeys.length > 0) void finishRecording()
 })
 
 window.addEventListener('blur', () => {
-  if (recording) {
-    stopRecording()
-    setStatus('視窗失去焦點，已取消錄製。')
-  }
-})
-
-clearShortcutButton.addEventListener('click', async () => {
-  const result = await window.floadeSettings.setShortcut(null)
-  if (result.success) {
-    currentShortcut = null
-    setStatus('已清除快捷鍵。', 'success')
-    renderShortcut()
-  }
+  if (!activeRecorder) return
+  const recorder = activeRecorder
+  stopRecording()
+  setStatus(recorder, '視窗失去焦點，已取消錄製。')
 })
 
 opacityInput.addEventListener('input', async () => {
   updateOpacityDisplay()
   await window.floadeSettings.setOpacity(Number(opacityInput.value) / 100)
 })
-
 closeButton.addEventListener('click', () => window.floadeSettings.close())
-window.addEventListener('keydown', event => {
-  if (!recording && event.key === 'Escape') window.floadeSettings.close()
-})

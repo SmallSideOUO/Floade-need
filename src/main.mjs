@@ -5,6 +5,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { createScreenTranslator } from './screen-translator.mjs'
 
 const execFileAsync = promisify(execFile)
 const commitMessage = 'chore: sync data'
@@ -22,8 +23,11 @@ if (!app.requestSingleInstanceLock()) {
   let configFile
   let settingsWindow
   let registeredShortcut
+  let registeredTranslationShortcut
+  let screenTranslator
   let settings = {
     shortcut: null,
+    translationShortcut: 'Alt+Shift+T',
     opacity: 1
   }
   const pushingFolders = new Set()
@@ -48,13 +52,16 @@ if (!app.requestSingleInstanceLock()) {
         : []
       settings = {
         shortcut: typeof config.settings?.shortcut === 'string' ? config.settings.shortcut : null,
+        translationShortcut: typeof config.settings?.translationShortcut === 'string'
+          ? config.settings.translationShortcut
+          : 'Alt+Shift+T',
         opacity: Number.isFinite(config.settings?.opacity)
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1
       }
     } catch {
       folders = []
-      settings = { shortcut: null, opacity: 1 }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', opacity: 1 }
     }
   }
 
@@ -435,6 +442,34 @@ if (!app.requestSingleInstanceLock()) {
     }
   }
 
+  function setTranslationShortcut(shortcut) {
+    const previousShortcut = registeredTranslationShortcut
+    if (previousShortcut) globalShortcut.unregister(previousShortcut)
+    registeredTranslationShortcut = undefined
+
+    if (!shortcut) {
+      settings.translationShortcut = null
+      saveFolders()
+      return { success: true, shortcut: null }
+    }
+
+    if (globalShortcut.register(shortcut, () => screenTranslator?.start())) {
+      registeredTranslationShortcut = shortcut
+      settings.translationShortcut = shortcut
+      saveFolders()
+      return { success: true, shortcut }
+    }
+
+    if (previousShortcut && globalShortcut.register(previousShortcut, () => screenTranslator?.start())) {
+      registeredTranslationShortcut = previousShortcut
+    }
+    return {
+      success: false,
+      shortcut: settings.translationShortcut,
+      message: '這組快捷鍵已被其他程式使用。'
+    }
+  }
+
   function setGlobalOpacity(value) {
     const opacity = Math.min(1, Math.max(0.4, Number(value) || 1))
     settings.opacity = opacity
@@ -454,7 +489,7 @@ if (!app.requestSingleInstanceLock()) {
 
     settingsWindow = new BrowserWindow({
       width: 560,
-      height: 500,
+      height: 650,
       icon: windowIconPath(),
       opacity: settings.opacity,
       frame: false,
@@ -487,6 +522,11 @@ if (!app.requestSingleInstanceLock()) {
     ipcMain.handle('settings:set-shortcut', (event, shortcut) => {
       if (event.sender !== settingsWindow?.webContents) return { success: false }
       return setGlobalShortcut(typeof shortcut === 'string' ? shortcut : null)
+    })
+
+    ipcMain.handle('settings:set-translation-shortcut', (event, shortcut) => {
+      if (event.sender !== settingsWindow?.webContents) return { success: false }
+      return setTranslationShortcut(typeof shortcut === 'string' ? shortcut : null)
     })
 
     ipcMain.handle('settings:set-opacity', (event, opacity) => {
@@ -756,6 +796,10 @@ if (!app.requestSingleInstanceLock()) {
       ...folderItems,
       { type: 'separator' },
       {
+        label: '畫面翻譯',
+        click: () => screenTranslator?.start()
+      },
+      {
         label: '設定',
         click: showSettings
       },
@@ -786,6 +830,14 @@ if (!app.requestSingleInstanceLock()) {
     if (process.platform === 'win32') app.setAppUserModelId('com.floade.local-data')
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
+    screenTranslator = createScreenTranslator({
+      appPath: app.getAppPath(),
+      userDataPath: app.getPath('userData'),
+      iconPath: windowIconPath,
+      getOpacity: () => settings.opacity,
+      showToast
+    })
+    screenTranslator.registerIpc()
     registerSettingsHandlers()
     registerPreviewHandlers()
 
@@ -812,10 +864,15 @@ if (!app.requestSingleInstanceLock()) {
       const result = setGlobalShortcut(settings.shortcut)
       if (!result.success) showToast('快捷鍵失敗', result.message, 'error')
     }
+    if (settings.translationShortcut) {
+      const result = setTranslationShortcut(settings.translationShortcut)
+      if (!result.success) showToast('翻譯快捷鍵失敗', result.message, 'error')
+    }
   })
 
   app.on('before-quit', () => {
     globalShortcut.unregisterAll()
+    void screenTranslator?.dispose()
     controlServer?.close()
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
       fs.unlinkSync(controlSocket)

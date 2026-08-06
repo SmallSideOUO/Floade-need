@@ -27,6 +27,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Opens one or more local Markdown files in editable desktop windows
 - Supports always-on-top controls in both the Markdown picker and document windows
 - Provides a global shortcut recorder with chords of up to three keys
+- Translates a dragged screen region with bundled local OCR and Google Translate
 - Applies one configurable opacity level to every Floade window
 - Uses the current GitHub CLI login to list private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
@@ -37,6 +38,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 ## Security warning
 
 Floade **does not encrypt your files**. It stages and commits every file in a linked folder, except files already excluded by that folder's `.gitignore`.
+
+Screen OCR runs locally. After OCR, the recognized text is sent to Google Translate to produce the translation. Do not translate sensitive text that you do not want to send to Google.
 
 Before pushing sensitive data:
 
@@ -72,7 +75,7 @@ Right-click the Floade tray icon:
 
 Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
-Select **Settings** (`設定`) from the main tray menu to record a system-wide shortcut that opens the Floade menu. A shortcut may contain up to three simultaneous keys. The same page controls the opacity of all Floade windows from 40% to 100%.
+Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the Floade menu and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the opacity of all Floade windows from 40% to 100%.
 
 `Push` runs the equivalent of:
 

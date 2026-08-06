@@ -35,6 +35,21 @@
         </article>
 
         <article class="setting-card">
+          <div class="setting-copy">
+            <h2>OCR 畫面翻譯</h2>
+            <p>按下快捷鍵後拖曳框選文字；本機 OCR 完成後交給 Google 自動翻譯。</p>
+          </div>
+          <div class="shortcut-row">
+            <button id="translation-record" class="shortcut" type="button">
+              <span id="translation-shortcut-value">尚未設定</span>
+              <small id="translation-shortcut-hint">點擊後錄製</small>
+            </button>
+            <button id="clear-translation-shortcut" class="secondary" type="button">清除</button>
+          </div>
+          <p id="translation-shortcut-status" class="status" aria-live="polite"></p>
+        </article>
+
+        <article class="setting-card">
           <div class="setting-title-row">
             <div class="setting-copy">
               <h2>全域視窗透明度</h2>

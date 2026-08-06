@@ -17,8 +17,7 @@ const controlSocket = process.platform === 'win32'
 function launch() {
   const child = spawn(electron, [packageRoot, '--background'], {
     detached: true,
-    stdio: 'ignore',
-    windowsHide: true
+    stdio: 'ignore'
   })
 
   child.unref()
