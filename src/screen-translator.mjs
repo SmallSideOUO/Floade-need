@@ -129,8 +129,9 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       }
     })
 
-    resultWindows.set(window.webContents.id, window)
-    window.on('closed', () => resultWindows.delete(window.webContents.id))
+    const webContentsId = window.webContents.id
+    resultWindows.set(webContentsId, window)
+    window.on('closed', () => resultWindows.delete(webContentsId))
     window.webContents.once('did-finish-load', () => {
       window.webContents.send('translation-result:data', data)
     })
