@@ -33,8 +33,9 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Lets translation windows change or swap languages and edit both the source and translated text
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
-- Uses the current GitHub CLI login to list private repositories
+- Opens a GitHub sign-in flow from the Link window when GitHub CLI is signed out, then lists private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
+- Automatically pushes changed linked folders once daily at 20:00 local time while Floade is running; launching after 20:00 catches up that day's push
 - Shows processing, success, and failure notifications
 - Keeps linked folder paths locally; GitHub credentials remain managed by GitHub CLI
 - Supports `floade`, `floade stop`, and `floade restart`
@@ -63,7 +64,7 @@ Before pushing sensitive data:
 
 - Windows 10 or newer for the installer
 - Git
-- [GitHub CLI](https://cli.github.com/) authenticated with `gh auth login`
+- [GitHub CLI](https://cli.github.com/) (Floade can start its browser sign-in from the Link window)
 - Node.js 22 or newer only when installing from the command line
 
 The current release has been tested on Windows. The runtime uses Electron's cross-platform tray APIs, but macOS and Linux packaging and QA are still pending.
@@ -95,7 +96,7 @@ Right-click the Floade tray icon:
 
 1. Select **Add folder** (`新增資料夾`) and choose an existing local folder.
 2. Hover the folder path and select **Link**.
-3. Choose a private repository from the current GitHub CLI account.
+3. If prompted, select **Sign in to GitHub**, enter the displayed device code in the browser, and authorize GitHub CLI. Then choose a private repository.
 4. Select **Push**.
 
 Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
@@ -115,6 +116,8 @@ git push -u origin main
 ```
 
 Floade does not force-push. A repository with conflicting remote history produces a failure notification instead of overwriting the remote.
+
+On Windows, the installed app starts at sign-in so the daily push can run. The automatic push uses the same safe Git flow as manual **Push** and only attempts folders with local changes. If Floade is closed or the computer is off at 20:00, it tries once after the next launch that day. Failed pushes show an error and can be retried manually.
 
 ## Commands
 

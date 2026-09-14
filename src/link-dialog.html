@@ -14,8 +14,13 @@
       </header>
       <section>
         <h1 id="title" data-i18n="link.title">選擇 Private Repo</h1>
-        <input id="search" type="search" data-i18n-placeholder="link.search" autocomplete="off">
-        <div id="repositories" class="repositories"></div>
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+        <div id="auth-actions" class="auth-actions" hidden>
+          <button id="login" class="primary" type="button" data-i18n="link.signIn">Sign in to GitHub</button>
+          <button id="retry" class="secondary" type="button" data-i18n="link.retry">Retry</button>
+        </div>
+        <input id="search" type="search" data-i18n-placeholder="link.search" autocomplete="off" hidden>
+        <div id="repositories" class="repositories" hidden></div>
       </section>
     </main>
     <script src="./i18n-renderer.js"></script>

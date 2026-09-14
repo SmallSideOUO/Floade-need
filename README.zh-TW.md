@@ -33,8 +33,9 @@ Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；�
 - 可在翻譯視窗調整或翻轉語言，並直接編輯原文與翻譯內容
 - 提供英文及繁體中文介面，可跟隨系統語言或手動切換
 - 使用同一個透明度設定控制所有 Floade 視窗
-- 使用本機 GitHub CLI 的登入狀態列出 Private Repo
+- 尚未登入時可從 Link 視窗啟動 GitHub 瀏覽器授權，再列出 Private Repo
 - 自動初始化 Git，以 `chore: sync data` 提交所有目前變更並 Push 至 `main`
+- 每天本機時間 20:00 自動 Push 有變更的連結資料夾；若當天 20:00 後才啟動，會補做當日 Push
 - 顯示處理中、成功及失敗通知
 - 連結的資料夾路徑只儲存在本機；GitHub 憑證仍由 GitHub CLI 管理
 - 支援 `floade`、`floade stop` 及 `floade restart`
@@ -63,7 +64,7 @@ Push 敏感資料前請注意：
 
 - 使用安裝檔時需要 Windows 10 或更新版本
 - Git
-- 已透過 `gh auth login` 登入的 [GitHub CLI](https://cli.github.com/)
+- [GitHub CLI](https://cli.github.com/)（可從 Floade 的 Link 視窗啟動瀏覽器登入）
 - 只有透過指令安裝時才需要 Node.js 22 或更新版本
 
 目前版本已在 Windows 測試。執行環境使用 Electron 的跨平台系統匣 API，但 macOS 與 Linux 的打包及 QA 尚未完成。
@@ -95,7 +96,7 @@ floade
 
 1. 選擇「新增資料夾」，加入一個現有的本機資料夾。
 2. Hover 資料夾路徑並選擇 `Link`。
-3. 從目前 GitHub CLI 帳號選擇一個 Private Repo。
+3. 如果出現提示，選擇「登入 GitHub」，在瀏覽器輸入視窗顯示的裝置代碼並授權 GitHub CLI，接著選擇 Private Repo。
 4. 選擇 `Push`。
 
 從資料夾子選單選擇「預覽」，即可勾選一個或多個 `.md` 檔案。已連結且本機 Git 工作目錄沒有變更時，Floade 會先檢查 Repo 更新；如果資料夾是空的，則會自動 Clone。每個檔案會在各自的可編輯視窗中開啟，修改內容會自動儲存回原始本機檔案。使用圖釘按鈕可將選擇視窗或 Markdown 視窗保持置頂。
@@ -115,6 +116,8 @@ git push -u origin main
 ```
 
 Floade 不會執行 Force Push。如果遠端 Repo 存在衝突的 Git 歷史，Floade 會顯示失敗通知，而不是覆蓋遠端內容。
+
+Windows 安裝版會在登入電腦時啟動，以便執行每日 Push。自動 Push 與手動 Push 使用相同的 Git 流程，僅處理有本機變更的資料夾。若 20:00 時程式未執行或電腦關機，當天稍後啟動時會補做一次；失敗時會顯示通知，也可手動重試。
 
 ## 指令
 

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
-import { execFile, spawnSync } from 'node:child_process'
+import { execFile, spawn, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -26,6 +26,8 @@ if (!app.requestSingleInstanceLock()) {
   let registeredShortcut
   let registeredTranslationShortcut
   let screenTranslator
+  let autoPushTimer
+  let lastAutoPushDate = null
   let settings = {
     shortcut: null,
     translationShortcut: 'Alt+Shift+T',
@@ -64,15 +66,17 @@ if (!app.requestSingleInstanceLock()) {
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1
       }
+      lastAutoPushDate = typeof config.lastAutoPushDate === 'string' ? config.lastAutoPushDate : null
     } catch {
       folders = []
       settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1 }
+      lastAutoPushDate = null
     }
   }
 
   function saveFolders() {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
-    fs.writeFileSync(configFile, `${JSON.stringify({ folders, settings }, null, 2)}\n`, 'utf8')
+    fs.writeFileSync(configFile, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
   }
 
   function effectiveLocale() {
@@ -177,7 +181,7 @@ if (!app.requestSingleInstanceLock()) {
     return window
   }
 
-  async function showRepoPicker(repositories) {
+  async function showRepoPicker() {
     return new Promise(resolve => {
       const window = new BrowserWindow({
         width: 520,
@@ -200,9 +204,74 @@ if (!app.requestSingleInstanceLock()) {
       })
 
       let settled = false
+      let repositories = []
+      let loginProcess = null
+      const update = (state, details = {}) => {
+        if (!window.isDestroyed() && !window.webContents.isLoading()) {
+          window.webContents.executeJavaScript(`window.setLinkState(${JSON.stringify({ state, ...details })})`).catch(() => {})
+        }
+      }
+      const refresh = async () => {
+        update('loading')
+        try {
+          await command('gh', ['auth', 'status', '--active', '--hostname', 'github.com'])
+        } catch (error) {
+          update('signedOut', { message: error.code === 'ENOENT' ? tr('link.cliMissing') : '' })
+          return
+        }
+        try {
+          const { stdout } = await command('gh', [
+            'repo', 'list', '--limit', '100', '--json', 'nameWithOwner,isPrivate'
+          ])
+          repositories = JSON.parse(stdout)
+            .filter(repository => repository.isPrivate)
+            .map(repository => repository.nameWithOwner)
+            .sort((left, right) => left.localeCompare(right))
+          update('ready', { repositories })
+        } catch (error) {
+          update('error', { message: commandErrorMessage(error) })
+        }
+      }
+      const login = () => {
+        if (loginProcess) return
+        update('signingIn')
+        loginProcess = spawn('gh', [
+          'auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https',
+          '--web', '--clipboard', '--scopes', 'repo'
+        ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+        let output = ''
+        let confirmedGit = false
+        let openedBrowser = false
+        const onOutput = chunk => {
+          output += chunk.toString()
+          if (!confirmedGit && output.includes('Authenticate Git with your GitHub credentials?')) {
+            confirmedGit = true
+            loginProcess?.stdin.write('Y\n')
+          }
+          if (!openedBrowser && output.includes('Press Enter to open')) {
+            openedBrowser = true
+            loginProcess?.stdin.write('\n')
+          }
+          const code = output.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/)?.[0]
+          if (code) update('signingIn', { code })
+        }
+        loginProcess.stdout.on('data', onOutput)
+        loginProcess.stderr.on('data', onOutput)
+        loginProcess.on('error', error => {
+          loginProcess = null
+          update('error', { message: commandErrorMessage(error) })
+        })
+        loginProcess.on('close', code => {
+          loginProcess = null
+          if (settled) return
+          if (code === 0) void refresh()
+          else if (code !== null) update('error', { message: output.split(/\r?\n/).filter(Boolean).at(-1) || tr('link.loginFailed') })
+        })
+      }
       const finish = repository => {
         if (settled) return
         settled = true
+        loginProcess?.kill()
         if (!window.isDestroyed()) window.close()
         resolve(repository)
       }
@@ -212,10 +281,15 @@ if (!app.requestSingleInstanceLock()) {
         if (!targetUrl.startsWith('floade-link://')) return
         event.preventDefault()
         const action = new URL(targetUrl)
-        finish(action.hostname === 'select' ? action.searchParams.get('repo') : null)
+        if (action.hostname === 'login') login()
+        else if (action.hostname === 'retry') void refresh()
+        else if (action.hostname === 'select') {
+          const repository = action.searchParams.get('repo')
+          if (repositories.includes(repository)) finish(repository)
+        } else finish(null)
       })
       window.webContents.once('did-finish-load', () => {
-        window.webContents.executeJavaScript(`window.setRepositories(${JSON.stringify(repositories)})`)
+        void refresh()
       })
       window.once('ready-to-show', () => {
         window.show()
@@ -656,20 +730,7 @@ if (!app.requestSingleInstanceLock()) {
 
   async function linkFolder(folder) {
     try {
-      const { stdout } = await execFileAsync('gh', [
-        'repo', 'list', '--limit', '100', '--json', 'nameWithOwner,isPrivate'
-      ], { windowsHide: true, maxBuffer: 10 * 1024 * 1024 })
-      const repositories = JSON.parse(stdout)
-        .filter(repository => repository.isPrivate)
-        .map(repository => repository.nameWithOwner)
-        .sort((left, right) => left.localeCompare(right))
-
-      if (repositories.length === 0) {
-        showToast(tr('link.failed'), tr('link.noPrivateRepos'), 'error')
-        return
-      }
-
-      const repository = await showRepoPicker(repositories)
+      const repository = await showRepoPicker()
       if (!repository) return
       folder.repo = repository
       saveFolders()
@@ -695,7 +756,7 @@ if (!app.requestSingleInstanceLock()) {
   async function pushFolder(folder) {
     if (!hasPushableChanges(folder)) {
       refreshTrayMenu()
-      return
+      return false
     }
     pushingFolders.add(folder.path)
     refreshTrayMenu()
@@ -745,14 +806,31 @@ if (!app.requestSingleInstanceLock()) {
       await command('git', ['push', '-u', 'origin', 'main'], folder.path)
       if (!processingToast.isDestroyed()) processingToast.close()
       showToast(tr('push.completed'), tr('push.synced', { repo: folder.repo }), 'success')
+      return true
     } catch (error) {
       if (!processingToast.isDestroyed()) processingToast.close()
       showToast(tr('push.failed'), commandErrorMessage(error), 'error')
+      return false
     } finally {
       if (!processingToast.isDestroyed()) processingToast.close()
       pushingFolders.delete(folder.path)
       refreshTrayMenu()
     }
+  }
+
+  function localDateKey(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  }
+
+  function runDailyPush() {
+    const now = new Date()
+    const today = localDateKey(now)
+    if (now.getHours() < 20 || lastAutoPushDate === today) return
+    const changedFolders = folders.filter(hasPushableChanges)
+    if (changedFolders.length === 0) return
+    lastAutoPushDate = today
+    saveFolders()
+    for (const folder of changedFolders) void pushFolder(folder)
   }
 
   async function addFolder() {
@@ -923,6 +1001,11 @@ if (!app.requestSingleInstanceLock()) {
     tray = new Tray(icon)
     tray.setToolTip('Floade')
     refreshTrayMenu()
+    if (process.platform === 'win32' && app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: true })
+    }
+    runDailyPush()
+    autoPushTimer = setInterval(runDailyPush, 60 * 1000)
     if (settings.shortcut) {
       const result = setGlobalShortcut(settings.shortcut)
       if (!result.success) showToast(tr('shortcut.failed'), result.message, 'error')
@@ -934,6 +1017,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', () => {
+    clearInterval(autoPushTimer)
     globalShortcut.unregisterAll()
     void screenTranslator?.dispose()
     controlServer?.close()
