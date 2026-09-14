@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { createScreenTranslator } from './screen-translator.mjs'
+import { ensureCommitIdentity } from './git-identity.mjs'
 import { normalizeLocale, translate } from './i18n-main.mjs'
 
 const execFileAsync = promisify(execFile)
@@ -797,8 +798,10 @@ if (!app.requestSingleInstanceLock()) {
       }
 
       if (hasStagedChanges) {
+        await ensureCommitIdentity(folder.path, command)
         await command('git', ['commit', '-m', commitMessage], folder.path)
       } else if (!hasCommit) {
+        await ensureCommitIdentity(folder.path, command)
         await command('git', ['commit', '--allow-empty', '-m', commitMessage], folder.path)
       }
 

@@ -35,6 +35,7 @@ Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；�
 - 使用同一個透明度設定控制所有 Floade 視窗
 - 尚未登入時可從 Link 視窗啟動 GitHub 瀏覽器授權，再列出 Private Repo
 - 自動初始化 Git，以 `chore: sync data` 提交所有目前變更並 Push 至 `main`
+- 連結資料夾若未設定 Git 提交者，會使用已登入 GitHub 帳號的名稱及隱私 Email 建立提交
 - 每天本機時間 20:00 自動 Push 有變更的連結資料夾；若當天 20:00 後才啟動，會補做當日 Push
 - 顯示處理中、成功及失敗通知
 - 連結的資料夾路徑只儲存在本機；GitHub 憑證仍由 GitHub CLI 管理

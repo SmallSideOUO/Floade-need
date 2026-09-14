@@ -35,6 +35,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Applies one configurable opacity level to every Floade window
 - Opens a GitHub sign-in flow from the Link window when GitHub CLI is signed out, then lists private repositories
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
+- Uses the signed-in GitHub account's name and private reply address for commits when a linked folder has no Git author configured
 - Automatically pushes changed linked folders once daily at 20:00 local time while Floade is running; launching after 20:00 catches up that day's push
 - Shows processing, success, and failure notifications
 - Keeps linked folder paths locally; GitHub credentials remain managed by GitHub CLI
