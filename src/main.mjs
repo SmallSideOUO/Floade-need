@@ -6,11 +6,11 @@ import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
 import { createScreenTranslator } from './screen-translator.mjs'
-import { ensureCommitIdentity } from './git-identity.mjs'
+import { syncFolderToRepository } from './push-folder.mjs'
 import { normalizeLocale, translate } from './i18n-main.mjs'
+import { createMarkdownDocument } from './markdown-document.mjs'
 
 const execFileAsync = promisify(execFile)
-const commitMessage = 'chore: sync data'
 
 const controlSocket = process.platform === 'win32'
   ? '\\\\.\\pipe\\floade-local-data-control'
@@ -365,14 +365,18 @@ if (!app.requestSingleInstanceLock()) {
 
     const webContentsId = window.webContents.id
     previewWindows.set(key, window)
-    previewFiles.set(webContentsId, filePath)
     window.on('closed', () => {
       previewWindows.delete(key)
+      previewFiles.get(webContentsId)?.dispose()
       previewFiles.delete(webContentsId)
     })
     window.webContents.once('did-finish-load', async () => {
       try {
-        const content = await fs.promises.readFile(filePath, 'utf8')
+        const document = createMarkdownDocument(filePath, content => {
+          if (!window.isDestroyed()) window.webContents.send('preview:changed', content)
+        })
+        previewFiles.set(webContentsId, document)
+        const content = document.read()
         window.webContents.send('preview:document', {
           name: path.basename(filePath),
           path: relativePath,
@@ -388,6 +392,7 @@ if (!app.requestSingleInstanceLock()) {
       window.show()
       window.focus()
     })
+    window.on('focus', () => previewFiles.get(webContentsId)?.refresh())
     window.loadFile(path.join(app.getAppPath(), 'src', 'markdown-preview.html'), {
       query: localizedQuery()
     })
@@ -708,23 +713,25 @@ if (!app.requestSingleInstanceLock()) {
       if (window && !window.isDestroyed()) window.close()
     })
 
-    ipcMain.handle('preview:save', async (event, content) => {
-      const filePath = previewFiles.get(event.sender.id)
-      if (!filePath || typeof content !== 'string') throw new Error(tr('markdown.missing'))
-      await fs.promises.writeFile(filePath, content, 'utf8')
-      refreshTrayMenu()
-      return true
+    ipcMain.handle('preview:read', event => {
+      const document = previewFiles.get(event.sender.id)
+      if (!document) throw new Error(tr('markdown.missing'))
+      return document.read()
     })
 
-    ipcMain.on('preview:save-sync', (event, content) => {
-      const filePath = previewFiles.get(event.sender.id)
+    ipcMain.handle('preview:save', (event, content, base) => {
+      const document = previewFiles.get(event.sender.id)
+      if (!document) throw new Error(tr('markdown.missing'))
+      const result = document.save(content, base)
+      if (result.ok) refreshTrayMenu()
+      return result
+    })
+
+    ipcMain.on('preview:save-sync', (event, content, base) => {
       try {
-        if (filePath && typeof content === 'string') {
-          fs.writeFileSync(filePath, content, 'utf8')
-        }
-        event.returnValue = true
+        event.returnValue = previewFiles.get(event.sender.id)?.save(content, base) ?? { ok: false }
       } catch {
-        event.returnValue = false
+        event.returnValue = { ok: false }
       }
     })
   }
@@ -769,44 +776,7 @@ if (!app.requestSingleInstanceLock()) {
     )
 
     try {
-      await command('gh', ['auth', 'setup-git'], folder.path)
-      await command('git', ['init'], folder.path)
-
-      const { stdout: remotes } = await command('git', ['remote'], folder.path)
-      const remoteUrl = `https://github.com/${folder.repo}.git`
-      if (remotes.split(/\r?\n/).includes('origin')) {
-        await command('git', ['remote', 'set-url', 'origin', remoteUrl], folder.path)
-      } else {
-        await command('git', ['remote', 'add', 'origin', remoteUrl], folder.path)
-      }
-
-      await command('git', ['add', '-A'], folder.path)
-
-      let hasStagedChanges = false
-      try {
-        await command('git', ['diff', '--cached', '--quiet'], folder.path)
-      } catch (error) {
-        if (error.code === 1) hasStagedChanges = true
-        else throw error
-      }
-
-      let hasCommit = true
-      try {
-        await command('git', ['rev-parse', '--verify', 'HEAD'], folder.path)
-      } catch {
-        hasCommit = false
-      }
-
-      if (hasStagedChanges) {
-        await ensureCommitIdentity(folder.path, command)
-        await command('git', ['commit', '-m', commitMessage], folder.path)
-      } else if (!hasCommit) {
-        await ensureCommitIdentity(folder.path, command)
-        await command('git', ['commit', '--allow-empty', '-m', commitMessage], folder.path)
-      }
-
-      await command('git', ['branch', '-M', 'main'], folder.path)
-      await command('git', ['push', '-u', 'origin', 'main'], folder.path)
+      await syncFolderToRepository(folder.path, folder.repo, command)
       if (!processingToast.isDestroyed()) processingToast.close()
       showToast(tr('push.completed'), tr('push.synced', { repo: folder.repo }), 'success')
       return true

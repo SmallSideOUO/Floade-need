@@ -108,3 +108,7 @@ button:focus-visible {
 
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { border-radius: 999px; background: #35353b; }
+
+#reload { flex: 0 0 auto; border: 1px solid #53535c; border-radius: 5px; background: #26262b; color: #e5e5e8; cursor: pointer; font-size: 10px; }
+footer { flex: 0 0 auto; gap: 8px; padding: 6px 16px; }
+#status { min-width: 0; margin-left: auto; line-height: 1.5; }

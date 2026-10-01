@@ -2,8 +2,10 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('floadePreview', {
   onDocument: callback => ipcRenderer.once('preview:document', (_event, document) => callback(document)),
-  save: content => ipcRenderer.invoke('preview:save', content),
-  saveSync: content => ipcRenderer.sendSync('preview:save-sync', content),
+  onChange: callback => ipcRenderer.on('preview:changed', (_event, content) => callback(content)),
+  read: () => ipcRenderer.invoke('preview:read'),
+  save: (content, base) => ipcRenderer.invoke('preview:save', content, base),
+  saveSync: (content, base) => ipcRenderer.sendSync('preview:save-sync', content, base),
   togglePin: () => ipcRenderer.invoke('preview:toggle-pin'),
   close: () => ipcRenderer.invoke('preview:close')
 })

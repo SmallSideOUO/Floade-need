@@ -102,6 +102,8 @@ Right-click the Floade tray icon:
 
 Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
+Open Markdown windows reload external file changes automatically. If the editor also has unsaved changes, Floade keeps the draft and blocks saving until you copy your edits and confirm **Reload from disk**.
+
 Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the Floade menu and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the interface language and the opacity of all Floade windows from 40% to 100%. Floade follows the operating-system language by default and falls back to English for unsupported languages.
 
 `Push` runs the equivalent of:
