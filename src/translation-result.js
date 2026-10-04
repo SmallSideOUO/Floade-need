@@ -8,6 +8,7 @@ const copyButton = document.querySelector('#copy')
 const pinButton = document.querySelector('#pin')
 const closeButton = document.querySelector('#close')
 const translateButton = document.querySelector('#translate')
+const swapButton = document.querySelector('#swap')
 const provider = document.querySelector('#provider')
 const voiceStatus = document.querySelector('#voice-status')
 const voiceButtons = [...document.querySelectorAll('.voice-button')]
@@ -30,6 +31,7 @@ const outputField = () => activeSide === 'source' ? translation : source
 
 function updateTranslateButton() {
   translateButton.disabled = translating || composing || !inputField().value.trim()
+  swapButton.disabled = composing
   updateVoiceButtons()
 }
 
@@ -158,6 +160,28 @@ for (const [side, field] of [['source', source], ['translation', translation]]) 
   })
 }
 translateButton.addEventListener('click', requestTranslation)
+swapButton.addEventListener('click', () => {
+  stopVoice()
+  clearTimeout(debounceTimer)
+  pendingRequest = false
+  inputRevision += 1
+  const upperLanguage = sourceLanguage.value === 'auto' ? detectedLanguage || 'en' : sourceLanguage.value
+  const lowerLanguage = targetLanguage.value
+  ensureLanguageOption(sourceLanguage, lowerLanguage)
+  ensureLanguageOption(targetLanguage, upperLanguage)
+  sourceLanguage.value = lowerLanguage
+  targetLanguage.value = upperLanguage
+  const upperText = source.value
+  source.value = translation.value
+  translation.value = upperText
+  detectedLanguage = ''
+  activeSide = activeSide === 'source' ? 'translation' : 'source'
+  confidence.hidden = true
+  status.textContent = ''
+  status.className = ''
+  updateTranslateButton()
+  inputField().focus()
+})
 for (const select of [sourceLanguage, targetLanguage]) {
   select.addEventListener('change', () => {
     stopVoice()

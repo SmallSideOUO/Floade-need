@@ -30,7 +30,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Supports always-on-top controls in both the Markdown picker and document windows
 - Provides a global shortcut recorder with chords of up to three keys
 - Translates a dragged screen region with bundled local OCR and Google Translate
-- Lets translation windows change languages and edit both the source and translated text
+- Lets translation windows change languages, swap both texts and their languages, and edit either text box
 - Opens a pinnable **Text translation** window from the tray menu; type in either box for automatic translation in both directions; **Translate** or `Ctrl+Enter` translates immediately
 - Provides microphone and read-aloud buttons in both text boxes; speech input translates automatically, and clicking the active button again stops voice
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override

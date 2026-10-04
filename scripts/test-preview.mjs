@@ -151,7 +151,7 @@ try {
   assert.equal(translationWindow.isMinimized(), false)
   results.push('pin toggles real native always-on-top; tray restores minimized window')
 
-  assert.equal(await runTranslation('document.querySelector("#swap")'), null)
+  assert.equal(await runTranslation('Boolean(document.querySelector("#swap"))'), true)
   const requests = []
   let pendingReply
   let responseMode = 'success'
@@ -178,7 +178,7 @@ try {
   const countAfterReverse = requests.length
   await wait(650)
   assert.equal(requests.length, countAfterReverse, 'reverse result does not loop')
-  results.push('swap removed; typing in either box automatically translates in the correct direction without loops')
+  results.push('typing in either box automatically translates in the correct direction without loops')
 
   await translationInput('H')
   await wait(100)
@@ -262,6 +262,38 @@ try {
     await fs.writeFile(process.env.FLOADE_TRANSLATION_SCREENSHOT, screenshot.toPNG())
   }
   results.push('both input directions have localized hints')
+  const pairBeforeSwap = await runTranslation('[document.querySelector("#source").value, document.querySelector("#translation").value]')
+  const countBeforeSwap = requests.length
+  await runTranslation('document.querySelector("#swap").click()')
+  assert.deepEqual(await runTranslation('[document.querySelector("#source").value, document.querySelector("#translation").value]'), [...pairBeforeSwap].reverse())
+  assert.deepEqual(await runTranslation('[document.querySelector("#source-language").value, document.querySelector("#target-language").value]'), ['ja', 'en'])
+  await wait(650)
+  assert.equal(requests.length, countBeforeSwap, 'swapping preserves both texts without regenerating them')
+  await runTranslation('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }))')
+  await until(idle)
+  assert.equal(requests.at(-1).q, pairBeforeSwap[0])
+  assert.equal(requests.at(-1).sl, 'en')
+  assert.equal(requests.at(-1).tl, 'ja')
+  await runTranslation('document.querySelector("#swap").click()')
+  assert.deepEqual(await runTranslation('[document.querySelector("#source").value, document.querySelector("#translation").value]'), pairBeforeSwap)
+  results.push('swap exchanges texts and languages together, resolves auto detection and preserves the last edited direction')
+
+  responseMode = 'delayed'
+  pendingReply = undefined
+  await translationInput('Pending swap')
+  await runTranslation('document.querySelector("#translate").click()')
+  await until(() => Promise.resolve(Boolean(pendingReply)))
+  await runTranslation('document.querySelector("#swap").click()')
+  const countDuringSwap = requests.length
+  responseMode = 'success'
+  pendingReply()
+  await until(idle)
+  assert.deepEqual(await runTranslation('[document.querySelector("#source").value, document.querySelector("#translation").value]'), ['', 'Pending swap'])
+  assert.equal(requests.length, countDuringSwap)
+  await lowerInput('Hello')
+  await until(() => runTranslation('document.querySelector("#source").value === "こんにちは"'))
+  await runTranslation('document.querySelector("#swap").click()')
+  results.push('swapping during a request ignores its stale reply and subsequent typing still translates correctly')
   await runTranslation('document.querySelector("#source-mic").click()')
   await until(() => Promise.resolve(voiceRequests.length > 0))
   let voiceRequest = voiceRequests.at(-1)
@@ -313,6 +345,11 @@ try {
   const textBeforeLateVoice = await runTranslation('document.querySelector("#source").value')
   voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'text', text: 'stale voice' })
   assert.equal(await runTranslation('document.querySelector("#source").value'), textBeforeLateVoice)
+  await runTranslation('document.querySelector("#source-mic").click()')
+  await until(() => Promise.resolve(fakeVoiceSession?.mode === 'listen'))
+  await runTranslation('document.querySelector("#swap").click()')
+  await until(() => Promise.resolve(!fakeVoiceSession))
+  results.push('swapping stops active voice before changing its language and text')
   await runTranslation('document.querySelector("#source-mic").click()')
   await until(() => Promise.resolve(fakeVoiceSession?.mode === 'listen'))
   results.push('both read-aloud buttons route text correctly; errors reset controls and stopped recognition cannot write late text')
