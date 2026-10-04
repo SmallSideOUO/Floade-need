@@ -28,12 +28,12 @@ if (isBall) {
   const search = document.querySelector('#search')
   const folders = document.querySelector('#folders')
   const documents = document.querySelector('#documents')
-  const recent = document.querySelector('#recent-documents')
   const status = document.querySelector('#status')
   let data = { folders: [], documents: [], indexing: true }
   let documentButtons = []
   let activeIndex = -1
   let opening = false
+  const expandedFolders = new Set()
   const key = document => `${document.folderPath}\n${document.relativePath}`
   function resize() {
     const fixedHeight = [...panel.children].filter(child => child.id !== 'items' && getComputedStyle(child).display !== 'none')
@@ -52,7 +52,7 @@ if (isBall) {
     opening = false
     if (!result?.ok) { status.className = 'error'; status.textContent = result?.message || t('launcher.openFailed') }
   }
-  function documentButton(document) {
+  function documentButton(document, withinFolder = false) {
     const button = window.document.createElement('button')
     button.type = 'button'
     button.className = 'document'
@@ -61,7 +61,7 @@ if (isBall) {
     const name = window.document.createElement('strong')
     name.textContent = document.name
     const location = window.document.createElement('small')
-    location.textContent = `${document.folderName} · ${document.relativePath}`
+    location.textContent = withinFolder ? document.relativePath : `${document.folderName} · ${document.relativePath}`
     button.append(name, location)
     button.addEventListener('click', () => void open(document))
     button.addEventListener('mouseenter', () => { activeIndex = documentButtons.indexOf(button); updateActive() })
@@ -78,7 +78,6 @@ if (isBall) {
     const matches = value => terms.every(term => value.toLocaleLowerCase().includes(term))
     folders.replaceChildren()
     documents.replaceChildren()
-    recent.replaceChildren()
     const visibleFolders = data.folders.filter(folder => matches(`${folder.name} ${folder.path} ${folder.repo || ''}`))
     for (const folder of visibleFolders) {
       const card = document.createElement('article')
@@ -89,6 +88,9 @@ if (isBall) {
       heading.className = 'folder-open'
       heading.title = folder.path
       heading.disabled = !folder.exists
+      const expanded = expandedFolders.has(folder.path)
+      heading.setAttribute('aria-expanded', String(expanded))
+      heading.setAttribute('aria-controls', `folder-documents-${data.folders.indexOf(folder)}`)
       const icon = document.createElement('span')
       icon.className = 'folder-icon'
       icon.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h7l2 3h9v11H3V6Z"/></svg>'
@@ -99,8 +101,18 @@ if (isBall) {
       const state = document.createElement('small')
       state.textContent = !folder.exists ? t('launcher.missingFolder') : folder.repo || t('launcher.unlinked')
       copy.append(name, state)
-      heading.append(icon, copy)
-      heading.addEventListener('click', () => void perform('preview', folder.path))
+      const chevron = document.createElement('span')
+      chevron.className = 'folder-chevron'
+      chevron.textContent = '›'
+      chevron.setAttribute('aria-hidden', 'true')
+      heading.append(icon, copy, chevron)
+      heading.addEventListener('click', () => {
+        if (expandedFolders.has(folder.path)) expandedFolders.delete(folder.path)
+        else expandedFolders.add(folder.path)
+        render()
+        const updatedCard = [...folders.querySelectorAll('.folder')].find(item => item.dataset.path === folder.path)
+        updatedCard?.querySelector('.folder-open').focus({ preventScroll: true })
+      })
       const actions = document.createElement('div')
       actions.className = 'folder-actions'
       for (const [action, label] of [['preview', 'launcher.preview'], ['push', folder.pushing ? 'launcher.pushing' : 'launcher.push'], ['remove', 'launcher.delete']]) {
@@ -114,14 +126,27 @@ if (isBall) {
         actions.append(button)
       }
       card.append(heading, actions)
+      const files = document.createElement('div')
+      files.id = heading.getAttribute('aria-controls')
+      files.className = 'folder-documents'
+      files.hidden = !expanded
+      if (expanded) {
+        const folderFiles = data.documents.filter(file => file.folderPath === folder.path)
+          .sort((a, b) => a.relativePath.localeCompare(b.relativePath, undefined, { numeric: true }))
+        for (const file of folderFiles) files.append(documentButton(file, true))
+        if (!folderFiles.length) {
+          const empty = document.createElement('div')
+          empty.className = 'folder-empty'
+          empty.textContent = t(data.indexing ? 'launcher.loading' : 'launcher.noDocuments')
+          files.append(empty)
+        }
+      }
+      card.append(files)
       folders.append(card)
     }
     const visibleDocuments = query ? data.documents.filter(file => matches(`${file.name} ${file.folderName} ${file.relativePath}`)).slice(0, 40) : []
     for (const file of visibleDocuments) documents.append(documentButton(file))
-    const recentDocuments = data.documents.filter(file => file.lastOpened).sort((a, b) => b.lastOpened - a.lastOpened).slice(0, 8)
-    for (const file of recentDocuments) recent.append(documentButton(file))
-    document.querySelector('#recent-section').hidden = !recentDocuments.length || Boolean(query)
-    documentButtons = [...documents.querySelectorAll('.document')]
+    documentButtons = [...document.querySelectorAll(query ? '#documents .document' : '#folders .document')]
     activeIndex = documentButtons.findIndex(button => button.dataset.key === previous)
     if (activeIndex < 0 && query && documentButtons.length) activeIndex = 0
     updateActive()
@@ -137,7 +162,6 @@ if (isBall) {
     }
     resize()
   }
-  document.querySelector('#recent-section').addEventListener('toggle', resize)
   panel.addEventListener('mouseenter', () => window.floadeLauncher.hover(true))
   panel.addEventListener('mouseleave', () => window.floadeLauncher.hover(false))
   search.addEventListener('input', render)

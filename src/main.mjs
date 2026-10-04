@@ -30,7 +30,6 @@ if (!app.requestSingleInstanceLock()) {
   let registeredTranslationShortcut
   let screenTranslator
   let floatingLauncher
-  let recentDocuments = []
   let documentIndex = { signature: '', updated: 0, documents: [] }
   let documentScan
   let autoPushTimer
@@ -79,13 +78,10 @@ if (!app.requestSingleInstanceLock()) {
         launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
           ? { x: config.settings.launcherPosition.x, y: config.settings.launcherPosition.y } : null
       }
-      recentDocuments = Array.isArray(config.recentDocuments) ? config.recentDocuments.filter(document =>
-        typeof document?.folderPath === 'string' && typeof document?.relativePath === 'string' && Number.isFinite(document?.lastOpened)).slice(0, 30) : []
       lastAutoPushDate = typeof config.lastAutoPushDate === 'string' ? config.lastAutoPushDate : null
     } catch {
       folders = []
       settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null }
-      recentDocuments = []
       lastAutoPushDate = null
     }
   }
@@ -94,7 +90,7 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
     const temporary = `${configFile}.tmp`
     try {
-      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate, recentDocuments }, null, 2)}\n`, 'utf8')
+      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
       fs.renameSync(temporary, configFile)
     } catch (error) {
       try { fs.unlinkSync(temporary) } catch {}
@@ -235,11 +231,6 @@ if (!app.requestSingleInstanceLock()) {
   async function openMarkdownPreview(folderPath, relativePath) {
     const filePath = markdownPath(folderPath, relativePath)
     if (!filePath || !fs.existsSync(filePath)) return
-    if (folders.some(folder => folder.path === folderPath)) {
-      recentDocuments = [{ folderPath, relativePath, lastOpened: Date.now() }, ...recentDocuments.filter(document =>
-        document.folderPath !== folderPath || document.relativePath !== relativePath)].slice(0, 30)
-      saveFolders()
-    }
 
     const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
     const existingWindow = previewWindows.get(key)
@@ -787,8 +778,7 @@ if (!app.requestSingleInstanceLock()) {
       folders: folders.map(folder => ({ ...folder, name: path.basename(folder.path) || folder.path,
         exists: fs.existsSync(folder.path), pushing: pushingFolders.has(folder.path),
         busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path), canPush: hasPushableChanges(folder) })),
-      documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath))
-        .map(document => ({ ...document, lastOpened: recentDocuments.find(recent => recent.folderPath === document.folderPath && recent.relativePath === document.relativePath)?.lastOpened || 0 })),
+      documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath)),
       indexing: Boolean(documentScan)
     }
   }

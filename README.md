@@ -26,7 +26,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 
 - Provides a draggable transparent floating ball with a breathing white center; position and visibility are remembered locally
 - Opens a compact hover panel with Add folder, translation tools, and folder cards for Preview, Push, and Delete; the panel stays open when the pointer moves into it and closes after leaving
-- Searches Markdown files across added folders and records recently opened documents; the global shortcut focuses search, Enter opens the selected document, and Esc closes the panel
+- Expands folder cards to show their Markdown files, including files in subfolders; click a file to open it directly
+- Searches Markdown files across added folders; the global shortcut focuses search, Enter opens the selected document, and Esc closes the panel
 - Adds existing local folders through the native folder picker
 - Opens one or more local Markdown files in editable desktop windows
 - Supports always-on-top controls in both the Markdown picker and document windows
@@ -107,7 +108,7 @@ Hover over the floating ball, or click it to focus the panel:
 2. Ask your local AI assistant to link the folder to your private GitHub repository using the [Floade local API](docs/local-api.md). Existing links are preserved. First-time GitHub access uses `gh auth login --hostname github.com --web`.
 3. Select **Push** on its folder card.
 
-The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Search in the panel to open a document directly; recently opened documents are available in the expandable section below. Use **Quit** at the bottom of the panel or `floade stop` to exit.
+The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. Use **Quit** at the bottom of the panel or `floade stop` to exit.
 
 Select **Preview** (`預覽`) on a folder card to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
