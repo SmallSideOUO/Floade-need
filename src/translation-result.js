@@ -29,6 +29,16 @@ let composing = false
 
 const inputField = () => activeSide === 'source' ? source : translation
 const outputField = () => activeSide === 'source' ? translation : source
+const extraTranslations = window.floadeExtraTranslations({
+  snapshot: () => ({
+    text: inputField().value,
+    sourceLanguage: activeSide === 'source' ? sourceLanguage.value : targetLanguage.value,
+    resolvedSourceLanguage: activeSide === 'source' ? (sourceLanguage.value === 'auto' ? detectedLanguage : sourceLanguage.value) : targetLanguage.value,
+    targetLanguage: activeSide === 'source' ? targetLanguage.value : (sourceLanguage.value === 'auto' ? detectedLanguage || 'en' : sourceLanguage.value),
+    composing
+  }),
+  languageLabel, rememberLanguages, t
+})
 
 function updateTranslateButton() {
   translateButton.disabled = translating || composing || !inputField().value.trim()
@@ -78,6 +88,7 @@ function refreshLanguageOptions() {
   const groups = window.floadeLanguages.rank(readLanguageUsage(), window.floadeI18n.locale)
   renderLanguageOptions(sourceLanguage, groups)
   renderLanguageOptions(targetLanguage, groups)
+  extraTranslations.options(groups)
 }
 
 function rememberLanguages(languages) {
@@ -138,6 +149,7 @@ async function retranslate() {
     sourceLanguage.value = upperLanguage
   }
   output.value = result.translation
+  extraTranslations.render()
   updateTranslateButton()
   status.textContent = t('translation.updated')
   setTimeout(() => {
@@ -148,6 +160,7 @@ async function retranslate() {
 function requestTranslation() {
   clearTimeout(debounceTimer)
   pendingRequest = true
+  extraTranslations.refresh()
   void retranslate()
 }
 
@@ -161,6 +174,7 @@ function edit(side) {
   status.textContent = ''
   status.className = ''
   outputField().value = ''
+  extraTranslations.invalidate()
   updateTranslateButton()
   if (!composing && inputField().value.trim()) {
     debounceTimer = setTimeout(requestTranslation, 500)
@@ -182,6 +196,7 @@ window.floadeTranslation.onData(data => {
   translation.value = data.translation || ''
   source.value = data.sourceText || ''
   if (source.value) rememberLanguages([sourceLanguage.value, targetLanguage.value])
+  extraTranslations.render()
   updateTranslateButton()
   if (!source.value) source.focus()
 })
@@ -191,6 +206,7 @@ for (const [side, field] of [['source', source], ['translation', translation]]) 
   field.addEventListener('compositionstart', () => {
     stopVoice()
     composing = true
+    extraTranslations.invalidate()
     inputRevision += 1
     pendingRequest = false
     clearTimeout(debounceTimer)
@@ -219,6 +235,7 @@ swapButton.addEventListener('click', () => {
   translation.value = upperText
   detectedLanguage = ''
   activeSide = activeSide === 'source' ? 'translation' : 'source'
+  extraTranslations.refresh()
   confidence.hidden = true
   status.textContent = ''
   status.className = ''
@@ -232,6 +249,7 @@ for (const select of [sourceLanguage, targetLanguage]) {
     inputRevision += 1
     outputField().value = ''
     if (select === sourceLanguage) detectedLanguage = ''
+    extraTranslations.invalidate()
     requestTranslation()
   })
 }

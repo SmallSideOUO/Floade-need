@@ -171,11 +171,17 @@ try {
   const requests = []
   let pendingReply
   let responseMode = 'success'
+  let failedLanguage
+  let extraDelay
   globalThis.fetch = async (_url, options) => {
     requests.push(Object.fromEntries(options.body))
-    if (responseMode === 'failure') return { ok: false, status: 503 }
+    if (responseMode === 'failure' || options.body.get('tl') === failedLanguage) return { ok: false, status: 503 }
     if (responseMode === 'delayed') await new Promise(resolve => { pendingReply = resolve })
-    const result = options.body.get('tl') === 'en' ? 'Hello' : options.body.get('tl') === 'ja' ? 'こんにちは' : '你好'
+    if (extraDelay?.language === options.body.get('tl')) await new Promise(resolve => { extraDelay.resolve = resolve })
+    const apple = { 'zh-TW': '蘋果', ja: 'りんご', es: 'manzana' }
+    const result = options.body.get('q') === 'Old fruit' && options.body.get('tl') === 'ja' ? '古い果物'
+      : options.body.get('q') === 'apple' && apple[options.body.get('tl')] ? apple[options.body.get('tl')]
+      : options.body.get('tl') === 'en' ? 'Hello' : options.body.get('tl') === 'ja' ? 'こんにちは' : options.body.get('tl') === 'es' ? 'Hola' : '你好'
     return { ok: true, json: async () => [[[result, options.body.get('q')]], null, options.body.get('sl') === 'auto' ? 'en' : options.body.get('sl')] }
   }
   const inputSide = (id, value) => runTranslation(`document.querySelector('#${id}').value = ${JSON.stringify(value)}; document.querySelector('#${id}').dispatchEvent(new Event('input'))`)
@@ -312,6 +318,85 @@ try {
   await until(() => runTranslation('document.querySelector("#source").value === "こんにちは"'))
   await runTranslation('document.querySelector("#swap").click()')
   results.push('swapping during a request ignores its stale reply and subsequent typing still translates correctly')
+  await runTranslation('document.querySelector("#target-language").value = "zh-TW"; document.querySelector("#target-language").dispatchEvent(new Event("change"))')
+  await until(idle)
+  await translationInput('apple')
+  await until(() => runTranslation('document.querySelector("#translation").value === "蘋果"'))
+  const extraClick = language => runTranslation(`document.querySelector('#extra-choices [data-language="${language}"]').click()`)
+  const extraReady = language => runTranslation(`Boolean(document.querySelector('#extra-${language} .extra-text.ready'))`)
+  await extraClick('ja')
+  await extraClick('es')
+  await until(() => extraReady('ja'))
+  await until(() => extraReady('es'))
+  assert.deepEqual(await runTranslation('[document.querySelector("#source").value, document.querySelector("#translation").value, document.querySelector("#extra-ja .extra-text").textContent, document.querySelector("#extra-es .extra-text").textContent]'), ['apple', '蘋果', 'りんご', 'manzana'])
+  assert.equal(requests.filter(request => request.q === 'apple' && request.tl === 'ja').at(-1).sl, 'en')
+  const countBeforeReopen = requests.length
+  await extraClick('ja')
+  await extraClick('ja')
+  await until(() => extraReady('ja'))
+  assert.equal(requests.length, countBeforeReopen, 'reopening a cached translation makes no request')
+  await runTranslation('document.querySelector("#extra-es .extra-action").click()')
+  await until(() => Promise.resolve(clipboard.readText() === 'manzana'))
+  if (process.env.FLOADE_MULTI_TRANSLATION_SCREENSHOT) {
+    await runTranslation('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const screenshot = await translationWindow.webContents.capturePage()
+    await fs.writeFile(process.env.FLOADE_MULTI_TRANSLATION_SCREENSHOT, screenshot.toPNG())
+  }
+  results.push('apple translates to Chinese with Japanese and Spanish expanded together; results copy independently and reuse cached translations')
+
+  const countBeforeExtraComposition = requests.length
+  await runTranslation('document.querySelector("#source").dispatchEvent(new CompositionEvent("compositionstart"))')
+  await translationInput('a')
+  await wait(650)
+  assert.equal(requests.length, countBeforeExtraComposition)
+  await runTranslation('document.querySelector("#source").value = "New fruit"; document.querySelector("#source").dispatchEvent(new CompositionEvent("compositionend"))')
+  await until(() => extraReady('ja'))
+  await until(() => extraReady('es'))
+  assert.deepEqual(new Set(requests.filter(request => request.q === 'New fruit').map(request => request.tl)), new Set(['zh-TW', 'ja', 'es']))
+  results.push('expanded languages update together from the original input after IME composition completes')
+
+  extraDelay = { language: 'ja' }
+  await translationInput('Old fruit')
+  await runTranslation('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }))')
+  await until(() => Promise.resolve(Boolean(extraDelay.resolve)))
+  const releaseOldExtra = extraDelay.resolve
+  extraDelay = undefined
+  await lowerInput('新的水果')
+  await runTranslation('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", ctrlKey: true }))')
+  await until(() => extraReady('ja'))
+  await until(() => extraReady('es'))
+  releaseOldExtra()
+  await wait(100)
+  assert.equal(await runTranslation('document.querySelector("#extra-ja .extra-text").textContent'), 'こんにちは')
+  assert.equal(await runTranslation('document.querySelector("#translation").value'), '新的水果')
+  assert.ok(requests.some(request => request.q === '新的水果' && request.sl === 'zh-TW' && request.tl === 'ja'))
+  assert.ok(requests.some(request => request.q === '新的水果' && request.sl === 'zh-TW' && request.tl === 'es'))
+  results.push('extra languages use lower input for reverse translation and ignore stale replies from the previous input')
+
+  failedLanguage = 'es'
+  await translationInput('Retry extra')
+  await until(() => runTranslation('Boolean(document.querySelector("#extra-es .extra-text.error"))'))
+  await until(() => extraReady('ja'))
+  await until(() => runTranslation('document.querySelector("#translation").value === "你好"'))
+  const countBeforeRetryExtra = requests.length
+  failedLanguage = undefined
+  await runTranslation('document.querySelector("#extra-es .extra-action").click()')
+  await until(() => extraReady('es'))
+  assert.equal(requests.length, countBeforeRetryExtra + 1)
+  assert.equal(requests.at(-1).tl, 'es')
+  await runTranslation('document.querySelector("#extra-language").value = "fr"; document.querySelector("#extra-language").dispatchEvent(new Event("change"))')
+  await until(() => extraReady('fr'))
+  assert.equal(requests.at(-1).q, 'Retry extra')
+  assert.equal(requests.at(-1).tl, 'fr')
+  results.push('one extra language can fail and retry without affecting the primary result; the full language picker adds another result')
+  await translationInput('')
+  await wait(650)
+  assert.equal(await runTranslation('document.querySelectorAll(".extra-text.ready").length'), 0)
+  await translationInput('Hello')
+  await until(() => extraReady('fr'))
+  for (const language of ['ja', 'es', 'fr']) await extraClick(language)
+  await runTranslation('document.querySelector("#target-language").value = "ja"; document.querySelector("#target-language").dispatchEvent(new Event("change"))')
+  await until(() => runTranslation('document.querySelector("#translation").value === "こんにちは"'))
   await runTranslation('document.querySelector("#source-mic").click()')
   await until(() => Promise.resolve(voiceRequests.length > 0))
   let voiceRequest = voiceRequests.at(-1)

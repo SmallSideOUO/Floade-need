@@ -1,6 +1,7 @@
 (() => {
   const messages = {
     en: {
+      'translation.extraLanguages': 'More translations', 'translation.viewLanguage': 'Show {language}', 'translation.addLanguage': 'Add a language…', 'translation.retry': 'Retry', 'translation.extraHint': 'Type text above to translate…',
       'common.close': 'Close', 'common.pin': 'Pin', 'common.unpin': 'Unpin', 'common.cancel': 'Cancel',
       'capture.title': 'Floade screen translation', 'capture.tip': 'Drag to select text to translate', 'capture.cancel': 'Esc to cancel',
       'delete.title': 'Remove from Floade', 'delete.heading': 'Remove this folder?', 'delete.note': 'This only removes it from the Floade menu. Local files will not be deleted.', 'delete.remove': 'Remove',
@@ -13,6 +14,7 @@
       'language.zh-TW': 'Traditional Chinese', 'language.zh-CN': 'Simplified Chinese', 'language.en': 'English', 'language.ja': 'Japanese', 'language.ko': 'Korean', 'language.fr': 'French', 'language.de': 'German', 'language.es': 'Spanish', 'language.pt': 'Portuguese', 'language.it': 'Italian', 'language.ru': 'Russian', 'language.vi': 'Vietnamese', 'language.th': 'Thai', 'language.id': 'Indonesian'
     },
     'zh-TW': {
+      'translation.extraLanguages': '其他語言翻譯', 'translation.viewLanguage': '看{language}', 'translation.addLanguage': '新增語言…', 'translation.retry': '重試', 'translation.extraHint': '在上方輸入文字後翻譯…',
       'common.close': '關閉', 'common.pin': '置頂', 'common.unpin': '取消置頂', 'common.cancel': '取消',
       'capture.title': 'Floade 畫面翻譯', 'capture.tip': '拖曳框選要翻譯的文字', 'capture.cancel': 'Esc 取消',
       'delete.title': '從 Floade 移除', 'delete.heading': '移除這個資料夾？', 'delete.note': '只會從 Floade 選單移除，本機檔案不會被刪除。', 'delete.remove': '移除',

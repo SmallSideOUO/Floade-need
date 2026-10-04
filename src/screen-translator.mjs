@@ -125,7 +125,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   function openResult(data) {
     const window = new BrowserWindow({
       width: 560,
-      height: 470,
+      height: Math.min(640, screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea.height - 32),
       icon: iconPath(),
       opacity: getOpacity(),
       minWidth: 390,
