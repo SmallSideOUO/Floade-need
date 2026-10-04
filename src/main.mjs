@@ -908,6 +908,10 @@ if (!app.requestSingleInstanceLock()) {
       ...folderItems,
       { type: 'separator' },
       {
+        label: tr('menu.textTranslate'),
+        click: () => screenTranslator?.openTextWindow()
+      },
+      {
         label: tr('menu.screenTranslate'),
         click: () => screenTranslator?.start()
       },

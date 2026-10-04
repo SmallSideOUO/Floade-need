@@ -29,14 +29,14 @@
           <small id="confidence"></small>
         </div>
         <article class="source-card">
-          <div class="section-title"><h2 data-i18n="translation.source">OCR 原文</h2></div>
-          <textarea id="source" class="text" data-i18n-aria="translation.sourceLabel" spellcheck="true"></textarea>
+          <div class="section-title"><h2 data-i18n="translation.source">原文</h2><button id="translate" type="button" data-i18n="translation.translate" data-i18n-title="translation.shortcut" disabled>翻譯</button></div>
+          <textarea id="source" class="text" data-i18n-aria="translation.sourceLabel" data-i18n-placeholder="translation.placeholder" spellcheck="true"></textarea>
         </article>
         <article class="translation-card">
           <div class="section-title"><h2 data-i18n="translation.result">翻譯</h2><button id="copy" type="button" data-i18n="translation.copy">複製</button></div>
           <textarea id="translation" class="text result" data-i18n-aria="translation.resultLabel" spellcheck="true"></textarea>
         </article>
-        <div class="footer-row"><p class="provider" data-i18n="translation.provider">本機 OCR · Google 翻譯</p><p id="status" aria-live="polite"></p></div>
+        <div class="footer-row"><p id="provider" class="provider" data-i18n="translation.textProvider">Google 翻譯 · Ctrl+Enter 翻譯</p><p id="status" aria-live="polite"></p></div>
       </section>
     </main>
     <script src="./i18n-renderer.js"></script>

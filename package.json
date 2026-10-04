@@ -1,6 +1,6 @@
 {
   "name": "floade-local-data",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Link local folders to private GitHub repositories and push from the system tray.",

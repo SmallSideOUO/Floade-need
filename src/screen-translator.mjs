@@ -40,6 +40,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   let captureState
   let busy = false
   let workerPromise
+  let textWindow
   const resultWindows = new Map()
 
   function ensureWorker() {
@@ -147,6 +148,19 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     window.loadFile(path.join(appPath, 'src', 'translation-result.html'), {
       query: { lang: getLocale() }
     })
+    return window
+  }
+
+  function openTextWindow() {
+    if (textWindow && !textWindow.isDestroyed()) {
+      if (textWindow.isMinimized()) textWindow.restore()
+      textWindow.show()
+      textWindow.focus()
+      return textWindow
+    }
+    textWindow = openResult({ sourceText: '', translation: '', sourceLanguage: 'auto', targetLanguage: 'zh-TW' })
+    textWindow.on('closed', () => { textWindow = undefined })
+    return textWindow
   }
 
   async function recognizeAndTranslate(image) {
@@ -333,5 +347,5 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
     }
   }
 
-  return { start, registerIpc, dispose }
+  return { start, openTextWindow, registerIpc, dispose }
 }
