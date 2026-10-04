@@ -32,6 +32,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Translates a dragged screen region with bundled local OCR and Google Translate
 - Lets translation windows change languages and edit both the source and translated text
 - Opens a pinnable **Text translation** window from the tray menu; type in either box for automatic translation in both directions; **Translate** or `Ctrl+Enter` translates immediately
+- Provides microphone and read-aloud buttons in both text boxes; speech input translates automatically, and clicking the active button again stops voice
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
 - Opens a GitHub sign-in flow from the Link window when GitHub CLI is signed out, then lists private repositories
@@ -55,6 +56,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 Floade **does not encrypt your files**. It stages and commits every file in a linked folder, except files already excluded by that folder's `.gitignore`.
 
 Screen OCR runs locally. After OCR, the recognized text is sent to Google Translate to produce the translation. Do not translate sensitive text that you do not want to send to Google.
+
+Speech recognition and read-aloud use local Windows speech engines. Audio stays on your computer; recognized text is sent to Google Translate. Select the text box's language before using its microphone and allow desktop apps to access your microphone in Windows settings. Available languages depend on installed Windows speech packages; missing packages display a message. A listening session lasts up to five minutes. Closing the window stops voice.
 
 Before pushing sensitive data:
 

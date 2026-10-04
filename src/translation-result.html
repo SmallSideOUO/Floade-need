@@ -26,14 +26,23 @@
           <small id="confidence"></small>
         </div>
         <article class="source-card">
-          <div class="section-title"><h2 data-i18n="translation.source">原文</h2><button id="translate" type="button" data-i18n="translation.translate" data-i18n-title="translation.shortcut" disabled>翻譯</button></div>
+          <div class="section-title"><h2 data-i18n="translation.source">上方文字</h2><div class="text-actions">
+            <button id="source-mic" class="voice-button" type="button" data-side="source" data-mode="listen" data-i18n-title="voice.listen" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3Zm-7-4h2v1a5 5 0 0 0 10 0v-1h2v1a7 7 0 0 1-6 6.93V21h3v2H8v-2h3v-2.07A7 7 0 0 1 5 12v-1Z"/></svg></button>
+            <button id="source-speak" class="voice-button" type="button" data-side="source" data-mode="speak" data-i18n-title="voice.speak" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3Zm12-2v2a4 4 0 0 1 0 6v2a6 6 0 0 0 0-10Zm3-3v2a8 8 0 0 1 0 12v2a10 10 0 0 0 0-16Z"/></svg></button>
+            <button id="translate" type="button" data-i18n="translation.translate" data-i18n-title="translation.shortcut" disabled>翻譯</button>
+          </div></div>
           <textarea id="source" class="text" data-i18n-aria="translation.sourceLabel" data-i18n-placeholder="translation.placeholder" spellcheck="true"></textarea>
         </article>
         <article class="translation-card">
-          <div class="section-title"><h2 data-i18n="translation.result">翻譯</h2><button id="copy" type="button" data-i18n="translation.copy">複製</button></div>
+          <div class="section-title"><h2 data-i18n="translation.result">下方文字</h2><div class="text-actions">
+            <button id="translation-mic" class="voice-button" type="button" data-side="translation" data-mode="listen" data-i18n-title="voice.listen" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v7a3 3 0 0 0 3 3Zm-7-4h2v1a5 5 0 0 0 10 0v-1h2v1a7 7 0 0 1-6 6.93V21h3v2H8v-2h3v-2.07A7 7 0 0 1 5 12v-1Z"/></svg></button>
+            <button id="translation-speak" class="voice-button" type="button" data-side="translation" data-mode="speak" data-i18n-title="voice.speak" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 4V5L7 9H3Zm12-2v2a4 4 0 0 1 0 6v2a6 6 0 0 0 0-10Zm3-3v2a8 8 0 0 1 0 12v2a10 10 0 0 0 0-16Z"/></svg></button>
+            <button id="copy" type="button" data-i18n="translation.copy">複製</button>
+          </div></div>
           <textarea id="translation" class="text result" data-i18n-aria="translation.resultLabel" data-i18n-placeholder="translation.reversePlaceholder" spellcheck="true"></textarea>
         </article>
         <div class="footer-row"><p id="provider" class="provider" data-i18n="translation.textProvider">Google 翻譯 · 上下皆可輸入，自動雙向翻譯</p><p id="status" aria-live="polite"></p></div>
+        <p id="voice-status" aria-live="polite"></p>
       </section>
     </main>
     <script src="./i18n-renderer.js"></script>

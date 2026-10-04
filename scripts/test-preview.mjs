@@ -14,6 +14,25 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const originalFetch = globalThis.fetch
+const voiceRequests = []
+let voiceOptions
+let fakeVoiceSession
+globalThis.previewVoiceFactory = options => {
+  voiceOptions = options
+  return {
+    start: (owner, request) => {
+      fakeVoiceSession = { owner, ...request }
+      voiceRequests.push(fakeVoiceSession)
+      return { success: true }
+    },
+    stop: (owner, id) => {
+      if (!fakeVoiceSession || (owner !== undefined && owner !== fakeVoiceSession.owner)
+        || (id !== undefined && id !== fakeVoiceSession.id)) return
+      options.emit(fakeVoiceSession.owner, { ...fakeVoiceSession, type: 'stopped' })
+      fakeVoiceSession = undefined
+    }
+  }
+}
 
 // Instrument a temporary copy of the real main process. No test hooks are
 // shipped in the app, and no user's profile, folder or control pipe is used.
@@ -23,6 +42,7 @@ source = source.replace(/from '(\.\/[^']+)'/g, (_match, relative) =>
 assert.ok(source.includes('  app.whenReady().then(() => {'))
 source = source.replace('floade-local-data-control', `floade-preview-qa-${process.pid}`)
 source = source.replace('    loadFolders()', '    folders = []')
+source = source.replace('    screenTranslator = createScreenTranslator({', '    screenTranslator = createScreenTranslator({ voiceFactory: globalThis.previewVoiceFactory,')
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (false)')
 source = source.replace('  app.whenReady().then(() => {',
   '  globalThis.previewQA = { openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu }\n  app.whenReady().then(() => {')
@@ -242,8 +262,63 @@ try {
     await fs.writeFile(process.env.FLOADE_TRANSLATION_SCREENSHOT, screenshot.toPNG())
   }
   results.push('both input directions have localized hints')
+  await runTranslation('document.querySelector("#source-mic").click()')
+  await until(() => Promise.resolve(voiceRequests.length > 0))
+  let voiceRequest = voiceRequests.at(-1)
+  assert.equal(voiceRequest.mode, 'listen')
+  assert.equal(voiceRequest.language, 'en')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'ready', language: 'en-US' })
+  await until(() => runTranslation('document.activeElement.id === "source"'))
+  await runTranslation('document.querySelector("#source").setSelectionRange(0, document.querySelector("#source").value.length)')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'text', text: 'Spoken English' })
+  await until(() => runTranslation('document.querySelector("#source").value === "Spoken English" && document.querySelector("#translation").value === "こんにちは"'))
+  await runTranslation('document.querySelector("#source-mic").click()')
+  await until(() => Promise.resolve(!fakeVoiceSession))
+  assert.equal(await runTranslation('document.querySelector("#source-mic").getAttribute("aria-pressed")'), 'false')
+  results.push('microphone inserts text at selection and automatically translates through real voice IPC; click again stops')
+
+  await runTranslation('document.querySelector("#target-language").value = "zh-TW"; document.querySelector("#target-language").dispatchEvent(new Event("change"))')
+  await until(() => runTranslation('document.querySelector("#translation").value === "你好"'))
+  await runTranslation('document.querySelector("#translation-mic").click()')
+  await until(() => Promise.resolve(fakeVoiceSession?.side === 'translation'))
+  voiceRequest = voiceRequests.at(-1)
+  assert.equal(voiceRequest.language, 'zh-TW')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'ready', language: 'zh-TW' })
+  await until(() => runTranslation('document.activeElement.id === "translation"'))
+  await runTranslation('document.querySelector("#translation").setSelectionRange(0, document.querySelector("#translation").value.length)')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'text', text: '語音輸入' })
+  await until(() => runTranslation('document.querySelector("#translation").value === "語音輸入" && document.querySelector("#source").value === "Hello"'))
+  await runTranslation('document.querySelector("#translation-speak").click()')
+  await until(() => Promise.resolve(fakeVoiceSession?.mode === 'speak'))
+  voiceRequest = voiceRequests.at(-1)
+  assert.equal(voiceRequest.language, 'zh-TW')
+  assert.equal(voiceRequest.text, '語音輸入')
+  assert.equal(await runTranslation('document.querySelector("#translation-mic").getAttribute("aria-pressed")'), 'false')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'ready', language: 'zh-TW' })
+  await until(() => runTranslation('document.querySelector("#voice-status").textContent === "正在朗讀…"'))
+  await lowerInput('修改後停止朗讀')
+  await until(() => Promise.resolve(!fakeVoiceSession))
+  await until(() => runTranslation('document.querySelector("#source").value === "Hello"'))
+  results.push('lower microphone translates in reverse; reading uses matching language and stops on text edits')
+
+  await runTranslation('document.querySelector("#source-speak").click()')
+  await until(() => Promise.resolve(fakeVoiceSession?.side === 'source'))
+  voiceRequest = voiceRequests.at(-1)
+  assert.equal(voiceRequest.text, 'Hello')
+  assert.equal(voiceRequest.language, 'en')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'error', message: 'Missing speech language' })
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'stopped' })
+  await until(() => runTranslation('document.querySelector("#voice-status").classList.contains("error")'))
+  assert.equal(await runTranslation('document.querySelector("#source-speak").getAttribute("aria-pressed")'), 'false')
+  const textBeforeLateVoice = await runTranslation('document.querySelector("#source").value')
+  voiceOptions.emit(voiceRequest.owner, { ...voiceRequest, type: 'text', text: 'stale voice' })
+  assert.equal(await runTranslation('document.querySelector("#source").value'), textBeforeLateVoice)
+  await runTranslation('document.querySelector("#source-mic").click()')
+  await until(() => Promise.resolve(fakeVoiceSession?.mode === 'listen'))
+  results.push('both read-aloud buttons route text correctly; errors reset controls and stopped recognition cannot write late text')
   await runTranslation('document.querySelector("#close").click()')
   await until(() => Promise.resolve(translationWindow.isDestroyed()))
+  assert.equal(fakeVoiceSession, undefined, 'closing translation window stops its microphone')
   translateItem.click()
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('translation-result.html'))))
   results.push('translation window closes and can be reopened from tray')

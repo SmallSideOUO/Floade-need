@@ -25,6 +25,14 @@ article { padding: 11px 12px; border: 1px solid #2b2b31; border-radius: 11px; ba
 .source-card { background: #151518; }
 .translation-card { margin-top: 9px; }
 .section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.text-actions { display: flex; align-items: center; gap: 5px; }
+.voice-button { display: grid; width: 26px; height: 26px; place-items: center; padding: 0; border: 1px solid #35353c; border-radius: 7px; background: #222226; color: #b7b7bd; cursor: pointer; }
+.voice-button svg { width: 14px; height: 14px; fill: currentColor; }
+.voice-button:hover, .voice-button.active { background: #2b2b30; color: #78aef8; }
+.voice-button[data-mode="listen"].active { color: #ef806e; border-color: #ab564a; }
+.voice-button:disabled { opacity: .4; cursor: default; }
+#voice-status { min-height: 14px; margin: 4px 2px 0; color: #78aef8; font-size: 10px; }
+#voice-status.error { color: #ef806e; }
 h2 { margin: 0; color: #8d8d96; font-size: 10px; font-weight: 650; letter-spacing: .03em; text-transform: uppercase; }
 #copy, #translate { padding: 4px 8px; border: 1px solid #35353c; border-radius: 7px; background: #222226; color: #cfcfd4; font: inherit; font-size: 10px; font-weight: 600; cursor: pointer; }
 #copy:hover, #translate:hover { background: #2b2b30; color: #fff; }

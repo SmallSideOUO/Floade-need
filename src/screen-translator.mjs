@@ -8,6 +8,7 @@ import {
 import fs from 'node:fs'
 import path from 'node:path'
 import { createWorker, OEM } from 'tesseract.js'
+import { createVoiceService } from './voice-service.mjs'
 
 const OCR_LANGUAGES = ['eng', 'chi_tra', 'chi_sim']
 const GOOGLE_TRANSLATE_URL = 'https://translate.googleapis.com/translate_a/single'
@@ -36,12 +37,20 @@ function languageName(code, translateUi) {
   return knownCodes.has(code) ? translateUi(`language.${code}`) : code
 }
 
-export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpacity, getLocale, showToast, translateUi }) {
+export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpacity, getLocale, showToast, translateUi, voiceFactory = createVoiceService }) {
   let captureState
   let busy = false
   let workerPromise
   let textWindow
   const resultWindows = new Map()
+  const voiceService = voiceFactory({
+    workerPath: path.join(appPath.replace(/app\.asar$/, 'app.asar.unpacked'), 'src', 'voice-worker.ps1'),
+    translateUi,
+    emit: (owner, data) => {
+      const window = resultWindows.get(owner)
+      if (window && !window.isDestroyed()) window.webContents.send('translation-result:voice', data)
+    }
+  })
 
   function ensureWorker() {
     if (!workerPromise) {
@@ -116,7 +125,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   function openResult(data) {
     const window = new BrowserWindow({
       width: 560,
-      height: 440,
+      height: 470,
       icon: iconPath(),
       opacity: getOpacity(),
       minWidth: 390,
@@ -137,7 +146,10 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
 
     const webContentsId = window.webContents.id
     resultWindows.set(webContentsId, window)
-    window.on('closed', () => resultWindows.delete(webContentsId))
+    window.on('closed', () => {
+      voiceService.stop(webContentsId)
+      resultWindows.delete(webContentsId)
+    })
     window.webContents.once('did-finish-load', () => {
       window.webContents.send('translation-result:data', data)
     })
@@ -296,6 +308,11 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   }
 
   function registerIpc() {
+    ipcMain.handle('translation-result:voice-start', (event, request) => {
+      if (!resultWindows.has(event.sender.id)) return { success: false, message: translateUi('translator.windowMissing') }
+      return voiceService.start(event.sender.id, request)
+    })
+    ipcMain.handle('translation-result:voice-stop', (event, id) => voiceService.stop(event.sender.id, id))
     ipcMain.on('capture:select', (event, selection) => {
       if (event.sender === captureState?.window.webContents) void finishSelection(selection ?? {})
     })
@@ -335,6 +352,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   }
 
   async function dispose() {
+    voiceService.stop()
     cancelSelection()
     for (const window of resultWindows.values()) {
       if (!window.isDestroyed()) window.close()

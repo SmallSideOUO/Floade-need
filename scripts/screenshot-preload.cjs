@@ -41,6 +41,9 @@ contextBridge.exposeInMainWorld('floadeSettings', {
 })
 
 contextBridge.exposeInMainWorld('floadeTranslation', {
+  onVoice: () => undefined,
+  startVoice: async () => ({ success: true }),
+  stopVoice: async () => undefined,
   onData: callback => defer(() => callback({
     sourceText: 'Keep your files private, portable, and easy to restore.',
     translation: '讓你的檔案保持私密、可攜，並且容易還原。',

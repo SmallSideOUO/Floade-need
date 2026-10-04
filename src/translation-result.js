@@ -9,6 +9,10 @@ const pinButton = document.querySelector('#pin')
 const closeButton = document.querySelector('#close')
 const translateButton = document.querySelector('#translate')
 const provider = document.querySelector('#provider')
+const voiceStatus = document.querySelector('#voice-status')
+const voiceButtons = [...document.querySelectorAll('.voice-button')]
+let voiceSession
+let voiceSequence = 0
 
 const languageCodes = ['zh-TW', 'zh-CN', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'it', 'ru', 'vi', 'th', 'id']
 const t = (key, variables) => window.floadeI18n.t(key, variables)
@@ -26,6 +30,7 @@ const outputField = () => activeSide === 'source' ? translation : source
 
 function updateTranslateButton() {
   translateButton.disabled = translating || composing || !inputField().value.trim()
+  updateVoiceButtons()
 }
 
 function addLanguageOptions(select) {
@@ -103,6 +108,7 @@ function requestTranslation() {
 }
 
 function edit(side) {
+  if (voiceSession && (voiceSession.mode === 'speak' || voiceSession.side !== side)) stopVoice()
   activeSide = side
   inputRevision += 1
   pendingRequest = false
@@ -139,6 +145,7 @@ window.floadeTranslation.onData(data => {
 for (const [side, field] of [['source', source], ['translation', translation]]) {
   field.addEventListener('input', () => edit(side))
   field.addEventListener('compositionstart', () => {
+    stopVoice()
     composing = true
     inputRevision += 1
     pendingRequest = false
@@ -153,6 +160,7 @@ for (const [side, field] of [['source', source], ['translation', translation]]) 
 translateButton.addEventListener('click', requestTranslation)
 for (const select of [sourceLanguage, targetLanguage]) {
   select.addEventListener('change', () => {
+    stopVoice()
     inputRevision += 1
     outputField().value = ''
     if (select === sourceLanguage) detectedLanguage = ''
@@ -189,5 +197,97 @@ window.addEventListener('floade-locale-changed', () => {
   }
   pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
   pinButton.setAttribute('aria-label', pinButton.title)
+  updateVoiceButtons()
 })
 window.addEventListener('beforeunload', () => clearTimeout(debounceTimer))
+
+function updateVoiceButtons() {
+  for (const button of voiceButtons) {
+    const field = button.dataset.side === 'source' ? source : translation
+    const active = voiceSession?.side === button.dataset.side && voiceSession?.mode === button.dataset.mode
+    button.classList.toggle('active', active)
+    button.setAttribute('aria-pressed', String(Boolean(active)))
+    button.disabled = button.dataset.mode === 'speak' && !active && !field.value.trim()
+    button.title = t(active ? 'voice.stop' : button.dataset.mode === 'listen' ? 'voice.listen' : 'voice.speak')
+    button.setAttribute('aria-label', button.title)
+  }
+}
+
+function stopVoice() {
+  if (!voiceSession) return
+  const id = voiceSession.id
+  voiceSession = undefined
+  voiceStatus.textContent = ''
+  voiceStatus.className = ''
+  updateVoiceButtons()
+  void window.floadeTranslation.stopVoice(id)
+}
+
+for (const button of voiceButtons) {
+  button.addEventListener('click', async () => {
+    if (voiceSession?.side === button.dataset.side && voiceSession?.mode === button.dataset.mode) {
+      stopVoice()
+      return
+    }
+    stopVoice()
+    const side = button.dataset.side
+    const mode = button.dataset.mode
+    const field = side === 'source' ? source : translation
+    let language = side === 'source' ? sourceLanguage.value : targetLanguage.value
+    if (language === 'auto') language = detectedLanguage || (window.floadeI18n.locale === 'zh-TW' ? 'zh-TW' : 'en')
+    const session = { id: ++voiceSequence, side, mode }
+    if (mode === 'listen') {
+      inputRevision += 1
+      pendingRequest = false
+      clearTimeout(debounceTimer)
+    }
+    voiceSession = session
+    voiceStatus.className = ''
+    voiceStatus.textContent = t('voice.starting')
+    updateVoiceButtons()
+    let result
+    try {
+      result = await window.floadeTranslation.startVoice({ ...session, language, text: field.value })
+    } catch (error) {
+      result = { success: false, message: error?.message || t('voice.failed') }
+    }
+    if (voiceSession !== session) return
+    if (!result.success) {
+      voiceSession = undefined
+      voiceStatus.className = 'error'
+      voiceStatus.textContent = result.message
+      updateVoiceButtons()
+    }
+  })
+}
+
+window.floadeTranslation.onVoice(data => {
+  if (!voiceSession || data.id !== voiceSession.id) return
+  if (data.type === 'ready') {
+    voiceStatus.textContent = t(data.mode === 'listen' ? 'voice.listening' : 'voice.speaking')
+    const field = data.side === 'source' ? source : translation
+    if (data.mode === 'listen') {
+      if (data.side === 'source' && sourceLanguage.value === 'auto') {
+        const language = languageCodes.includes(data.language) ? data.language : data.language.split('-')[0]
+        ensureLanguageOption(sourceLanguage, language)
+        sourceLanguage.value = language
+      }
+      field.focus()
+    }
+  } else if (data.type === 'text' && typeof data.text === 'string' && data.text.trim()) {
+    const field = data.side === 'source' ? source : translation
+    const start = field.selectionStart
+    const end = field.selectionEnd
+    const prefix = start > 0 && /[A-Za-z0-9]$/.test(field.value.slice(0, start)) && /^[A-Za-z0-9]/.test(data.text) ? ' ' : ''
+    field.setRangeText(prefix + data.text, start, end, 'end')
+    field.dispatchEvent(new Event('input'))
+  } else if (data.type === 'error') {
+    voiceStatus.className = 'error'
+    voiceStatus.textContent = data.message || t('voice.failed')
+  } else if (data.type === 'stopped') {
+    voiceSession = undefined
+    if (!voiceStatus.classList.contains('error')) voiceStatus.textContent = ''
+    updateVoiceButtons()
+  }
+})
+updateVoiceButtons()
