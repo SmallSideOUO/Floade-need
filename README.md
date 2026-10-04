@@ -4,7 +4,7 @@
 
 Floade is a tiny system-tray app that links local folders to private GitHub repositories and pushes every local change in one click.
 
-It has no main window. Launch it from the Windows Start menu or run `floade`, then use the tray menu to add folders, link repositories, push changes, or quit.
+It has no main window. Launch it from the Windows Start menu or run `floade`, then use the tray menu to add folders, preview files, push changes, or quit. AI tools link repositories through the local API.
 
 ## Why I built Floade
 
@@ -37,7 +37,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Provides microphone and read-aloud buttons in both text boxes; speech input translates automatically, and clicking the active button again stops voice
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
-- Opens a GitHub sign-in flow from the Link window when GitHub CLI is signed out, then lists private repositories
+- Provides a local API for AI tools to list folders, find writable private GitHub repositories, and link folders; the Windows installer includes a client that needs no Node.js or API key
 - Initializes Git, commits all current changes with `chore: sync data`, and pushes to `main`
 - Uses the signed-in GitHub account's name and private reply address for commits when a linked folder has no Git author configured
 - Automatically pushes changed linked folders once daily at 20:00 local time while Floade is running; launching after 20:00 catches up that day's push
@@ -102,9 +102,8 @@ If another package already provides a global `floade` command, uninstall or rena
 Right-click the Floade tray icon:
 
 1. Select **Add folder** (`新增資料夾`) and choose an existing local folder.
-2. Hover the folder path and select **Link**.
-3. If prompted, select **Sign in to GitHub**, enter the displayed device code in the browser, and authorize GitHub CLI. Then choose a private repository.
-4. Select **Push**.
+2. Ask your local AI assistant to link the folder to your private GitHub repository using the [Floade local API](docs/local-api.md). Existing links are preserved. First-time GitHub access uses `gh auth login --hostname github.com --web`.
+3. Select **Push** from the folder submenu.
 
 Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 

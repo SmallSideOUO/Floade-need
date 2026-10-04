@@ -6,6 +6,7 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { requestLocalApi, parseApiArguments } from '../src/local-api-client.mjs'
 
 const require = createRequire(import.meta.url)
 const electron = require('electron-runtime')
@@ -75,7 +76,29 @@ async function waitUntilStopped() {
 
 const command = process.argv[2]?.toLowerCase()
 
-if (command === 'stop') {
+if (command === 'api') {
+  try {
+    const request = parseApiArguments(process.argv.slice(3))
+    let response
+    try { response = await requestLocalApi(request) } catch (error) {
+      if (!['ENOENT', 'ECONNREFUSED'].includes(error.code)) throw error
+      launch()
+      const deadline = Date.now() + 8000
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 200))
+        try { response = await requestLocalApi(request); break } catch (retryError) {
+          if (!['ENOENT', 'ECONNREFUSED'].includes(retryError.code)) throw retryError
+        }
+      }
+      if (!response) throw new Error('Floade did not start. Open Floade and retry.')
+    }
+    console.log(JSON.stringify(response))
+    if (!response.ok) process.exitCode = 1
+  } catch (error) {
+    console.log(JSON.stringify({ ok: false, error: { code: 'CLIENT_ERROR', message: error.message } }))
+    process.exitCode = 1
+  }
+} else if (command === 'stop') {
   if (await sendCommand('stop')) {
     console.log(cliText('stopped'))
   } else {

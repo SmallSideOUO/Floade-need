@@ -4,7 +4,7 @@
 
 Floade 是一個小型系統匣工具，可以把本機資料夾連結到 GitHub Private Repo，並用一次點擊 Push 所有本機變更。
 
-Floade 沒有主視窗。你可以從 Windows 開始選單啟動，或執行 `floade`，再從系統匣選單新增資料夾、連結 Repo、Push 變更或退出。
+Floade 沒有主視窗。你可以從 Windows 開始選單啟動，或執行 `floade`，再從系統匣選單新增資料夾、預覽、Push 變更或退出。Repo 連結改由 AI 透過本機 API 完成。
 
 已開啟的 Markdown 視窗會自動載入外部檔案變更。若編輯器同時有尚未儲存的修改，Floade 會保留草稿並暫停儲存；請先複製你的編輯，再確認「從檔案重新載入」。
 
@@ -38,7 +38,7 @@ Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；�
 - 翻譯視窗的上下文字框皆提供麥克風及朗讀按鈕；語音輸入後自動翻譯，再按一次即可停止
 - 提供英文及繁體中文介面，可跟隨系統語言或手動切換
 - 使用同一個透明度設定控制所有 Floade 視窗
-- 尚未登入時可從 Link 視窗啟動 GitHub 瀏覽器授權，再列出 Private Repo
+- 提供本機 API，讓 AI 查詢資料夾、可寫入的 Private Repo 並完成連結；Windows 安裝版附帶呼叫工具，不需要 Node.js 或 API 金鑰
 - 自動初始化 Git，以 `chore: sync data` 提交所有目前變更並 Push 至 `main`
 - 連結資料夾若未設定 Git 提交者，會使用已登入 GitHub 帳號的名稱及隱私 Email 建立提交
 - 每天本機時間 20:00 自動 Push 有變更的連結資料夾；若當天 20:00 後才啟動，會補做當日 Push
@@ -103,9 +103,8 @@ floade
 右鍵點擊 Floade 系統匣圖示：
 
 1. 選擇「新增資料夾」，加入一個現有的本機資料夾。
-2. Hover 資料夾路徑並選擇 `Link`。
-3. 如果出現提示，選擇「登入 GitHub」，在瀏覽器輸入視窗顯示的裝置代碼並授權 GitHub CLI，接著選擇 Private Repo。
-4. 選擇 `Push`。
+2. 告訴本機 AI 助手要連結哪個 Private Repo，讓它透過 [Floade 本機 API](docs/local-api.md) 完成連結。原本的連結會保留；首次 GitHub 登入使用 `gh auth login --hostname github.com --web`。
+3. 從資料夾子選單選擇 `Push`。
 
 從資料夾子選單選擇「預覽」，即可勾選一個或多個 `.md` 檔案。已連結且本機 Git 工作目錄沒有變更時，Floade 會先檢查 Repo 更新；如果資料夾是空的，則會自動 Clone。每個檔案會在各自的可編輯視窗中開啟，修改內容會自動儲存回原始本機檔案。使用圖釘按鈕可將選擇視窗或 Markdown 視窗保持置頂。
 

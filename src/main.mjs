@@ -1,5 +1,5 @@
 import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
-import { execFile, spawn, spawnSync } from 'node:child_process'
+import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -9,6 +9,7 @@ import { createScreenTranslator } from './screen-translator.mjs'
 import { syncFolderToRepository } from './push-folder.mjs'
 import { normalizeLocale, translate } from './i18n-main.mjs'
 import { createMarkdownDocument } from './markdown-document.mjs'
+import { createLocalApi, attachControlSocket } from './local-api.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -36,6 +37,7 @@ if (!app.requestSingleInstanceLock()) {
     opacity: 1
   }
   const pushingFolders = new Set()
+  const linkingFolders = new Set()
   const previewPickers = new Map()
   const previewWindows = new Map()
   const previewFiles = new Map()
@@ -77,7 +79,14 @@ if (!app.requestSingleInstanceLock()) {
 
   function saveFolders() {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
-    fs.writeFileSync(configFile, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
+    const temporary = `${configFile}.tmp`
+    try {
+      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
+      fs.renameSync(temporary, configFile)
+    } catch (error) {
+      try { fs.unlinkSync(temporary) } catch {}
+      throw error
+    }
   }
 
   function effectiveLocale() {
@@ -180,126 +189,6 @@ if (!app.requestSingleInstanceLock()) {
       }, duration)
     }
     return window
-  }
-
-  async function showRepoPicker() {
-    return new Promise(resolve => {
-      const window = new BrowserWindow({
-        width: 520,
-        height: 480,
-        icon: windowIconPath(),
-        opacity: settings.opacity,
-        frame: false,
-        transparent: true,
-        resizable: false,
-        maximizable: false,
-        minimizable: false,
-        fullscreenable: false,
-        alwaysOnTop: true,
-        skipTaskbar: true,
-        show: false,
-        webPreferences: {
-          contextIsolation: true,
-          nodeIntegration: false
-        }
-      })
-
-      let settled = false
-      let repositories = []
-      let loginProcess = null
-      const update = (state, details = {}) => {
-        if (!window.isDestroyed() && !window.webContents.isLoading()) {
-          window.webContents.executeJavaScript(`window.setLinkState(${JSON.stringify({ state, ...details })})`).catch(() => {})
-        }
-      }
-      const refresh = async () => {
-        update('loading')
-        try {
-          await command('gh', ['auth', 'status', '--active', '--hostname', 'github.com'])
-        } catch (error) {
-          update('signedOut', { message: error.code === 'ENOENT' ? tr('link.cliMissing') : '' })
-          return
-        }
-        try {
-          const { stdout } = await command('gh', [
-            'repo', 'list', '--limit', '100', '--json', 'nameWithOwner,isPrivate'
-          ])
-          repositories = JSON.parse(stdout)
-            .filter(repository => repository.isPrivate)
-            .map(repository => repository.nameWithOwner)
-            .sort((left, right) => left.localeCompare(right))
-          update('ready', { repositories })
-        } catch (error) {
-          update('error', { message: commandErrorMessage(error) })
-        }
-      }
-      const login = () => {
-        if (loginProcess) return
-        update('signingIn')
-        loginProcess = spawn('gh', [
-          'auth', 'login', '--hostname', 'github.com', '--git-protocol', 'https',
-          '--web', '--clipboard', '--scopes', 'repo'
-        ], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
-        let output = ''
-        let confirmedGit = false
-        let openedBrowser = false
-        const onOutput = chunk => {
-          output += chunk.toString()
-          if (!confirmedGit && output.includes('Authenticate Git with your GitHub credentials?')) {
-            confirmedGit = true
-            loginProcess?.stdin.write('Y\n')
-          }
-          if (!openedBrowser && output.includes('Press Enter to open')) {
-            openedBrowser = true
-            loginProcess?.stdin.write('\n')
-          }
-          const code = output.match(/\b[A-Z0-9]{4}-[A-Z0-9]{4}\b/)?.[0]
-          if (code) update('signingIn', { code })
-        }
-        loginProcess.stdout.on('data', onOutput)
-        loginProcess.stderr.on('data', onOutput)
-        loginProcess.on('error', error => {
-          loginProcess = null
-          update('error', { message: commandErrorMessage(error) })
-        })
-        loginProcess.on('close', code => {
-          loginProcess = null
-          if (settled) return
-          if (code === 0) void refresh()
-          else if (code !== null) update('error', { message: output.split(/\r?\n/).filter(Boolean).at(-1) || tr('link.loginFailed') })
-        })
-      }
-      const finish = repository => {
-        if (settled) return
-        settled = true
-        loginProcess?.kill()
-        if (!window.isDestroyed()) window.close()
-        resolve(repository)
-      }
-
-      window.on('closed', () => finish(null))
-      window.webContents.on('will-navigate', (event, targetUrl) => {
-        if (!targetUrl.startsWith('floade-link://')) return
-        event.preventDefault()
-        const action = new URL(targetUrl)
-        if (action.hostname === 'login') login()
-        else if (action.hostname === 'retry') void refresh()
-        else if (action.hostname === 'select') {
-          const repository = action.searchParams.get('repo')
-          if (repositories.includes(repository)) finish(repository)
-        } else finish(null)
-      })
-      window.webContents.once('did-finish-load', () => {
-        void refresh()
-      })
-      window.once('ready-to-show', () => {
-        window.show()
-        window.focus()
-      })
-      window.loadFile(path.join(app.getAppPath(), 'src', 'link-dialog.html'), {
-        query: localizedQuery()
-      })
-    })
   }
 
   async function findMarkdownFiles(folderPath) {
@@ -736,18 +625,6 @@ if (!app.requestSingleInstanceLock()) {
     })
   }
 
-  async function linkFolder(folder) {
-    try {
-      const repository = await showRepoPicker()
-      if (!repository) return
-      folder.repo = repository
-      saveFolders()
-      refreshTrayMenu()
-    } catch (error) {
-      showToast(tr('link.failed'), commandErrorMessage(error), 'error')
-    }
-  }
-
   function commandErrorMessage(error) {
     const output = `${error?.stderr ?? ''}`.trim() || `${error?.message ?? error}`.trim()
     return output.split(/\r?\n/).filter(Boolean).at(-1) ?? tr('error.unknown')
@@ -833,7 +710,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function hasPushableChanges(folder) {
-    if (!folder.repo || pushingFolders.has(folder.path) || !fs.existsSync(folder.path)) {
+    if (!folder.repo || pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || !fs.existsSync(folder.path)) {
       return false
     }
 
@@ -879,10 +756,6 @@ if (!app.requestSingleInstanceLock()) {
               label: pushingFolders.has(folder.path) ? tr('menu.pushing') : tr('menu.push'),
               enabled: hasPushableChanges(folder),
               click: () => pushFolder(folder)
-            },
-            {
-              label: folder.repo ? `${tr('menu.link')}：${folder.repo}` : tr('menu.link'),
-              click: () => linkFolder(folder)
             },
             { type: 'separator' },
             {
@@ -963,13 +836,19 @@ if (!app.requestSingleInstanceLock()) {
       fs.unlinkSync(controlSocket)
     }
 
-    controlServer = net.createServer(socket => {
-      socket.once('data', data => {
-        const command = data.toString('utf8').trim()
-        socket.end('ok')
-        if (command === 'stop') setImmediate(() => app.quit())
-      })
+    const localApi = createLocalApi({
+      getFolders: () => folders,
+      command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
+      busyFolders: linkingFolders,
+      isPushing: folderPath => pushingFolders.has(folderPath),
+      refresh: refreshTrayMenu,
+      saveLink: (folder, repo) => {
+        const previous = folder.repo
+        folder.repo = repo
+        try { saveFolders() } catch (error) { folder.repo = previous; throw error }
+      }
     })
+    controlServer = net.createServer(socket => attachControlSocket(socket, localApi, () => app.quit()))
     controlServer.listen(controlSocket)
 
     const iconFile = process.platform === 'win32' ? 'tray.ico' : 'tray.png'

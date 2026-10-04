@@ -1,9 +1,11 @@
 import { app, BrowserWindow, clipboard } from 'electron'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
+import syncFs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { requestLocalApi } from '../src/local-api-client.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'floade-preview-qa-'))
@@ -14,6 +16,12 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const originalFetch = globalThis.fetch
+globalThis.previewApiFolder = path.join(temporary, 'api-folder')
+await fs.mkdir(globalThis.previewApiFolder)
+await fs.writeFile(path.join(globalThis.previewApiFolder, 'note.md'), 'API fixture\n')
+globalThis.previewGithubCommand = async (_program, args) => ({ stdout: args[0] === 'auth' ? '' : JSON.stringify(args[1] === 'list'
+  ? [{ nameWithOwner: 'fixture/data', isPrivate: true, viewerPermission: 'WRITE' }]
+  : { nameWithOwner: 'fixture/data', isPrivate: true, viewerPermission: 'WRITE' }) })
 // Keep QA windows off the user's desktop so typing cannot enter test fixtures.
 const hideQAWindow = (_event, window) => {
   window.show = () => {}
@@ -49,7 +57,10 @@ source = source.replace(/from '(\.\/[^']+)'/g, (_match, relative) =>
   `from '${pathToFileURL(path.join(root, 'src', relative)).href}'`)
 assert.ok(source.includes('  app.whenReady().then(() => {'))
 source = source.replace('floade-local-data-control', `floade-preview-qa-${process.pid}`)
-source = source.replace('    loadFolders()', '    folders = []')
+source = source.replace('    loadFolders()', '    folders = [{ path: globalThis.previewApiFolder, repo: null }]')
+const realApiCommand = 'command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 })'
+assert.ok(source.includes(realApiCommand))
+source = source.replace(realApiCommand, 'command: globalThis.previewGithubCommand')
 source = source.replace('    screenTranslator = createScreenTranslator({', '    screenTranslator = createScreenTranslator({ voiceFactory: globalThis.previewVoiceFactory,')
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (false)')
 source = source.replace('  app.whenReady().then(() => {',
@@ -61,6 +72,42 @@ try {
   await import(pathToFileURL(instrumented).href)
   await app.whenReady()
   await wait(100)
+  const apiSocket = process.platform === 'win32' ? `\\\\.\\pipe\\floade-preview-qa-${process.pid}` : path.join(os.tmpdir(), `floade-preview-qa-${process.pid}.sock`)
+  const apiCall = (method, params = {}) => requestLocalApi({ method, params }, { socketPath: apiSocket })
+  const folderMenu = () => previewQA.buildTrayMenu().items.find(item => item.label === globalThis.previewApiFolder).submenu
+  assert.equal(folderMenu().items.some(item => /Link|連結/.test(item.label)), false)
+  assert.equal(folderMenu().items[1].enabled, false, 'an unlinked folder cannot push')
+  assert.deepEqual((await apiCall('folders.list')).result.folders, [{ path: globalThis.previewApiFolder, repo: null, exists: true, busy: false }])
+  assert.equal((await apiCall('repositories.list')).result.repositories[0].repo, 'fixture/data')
+  const qaConfigPath = path.join(temporary, 'profile', 'folders.json')
+  const baselineConfig = JSON.stringify({ folders: [{ path: globalThis.previewApiFolder, repo: null }], settings: { language: 'system', opacity: 1 } })
+  await fs.writeFile(qaConfigPath, baselineConfig)
+  const originalRename = syncFs.renameSync
+  syncFs.renameSync = (from, to) => {
+    if (to === qaConfigPath) throw Object.assign(new Error('Configuration is busy'), { code: 'EBUSY' })
+    return originalRename(from, to)
+  }
+  try {
+    assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })).ok, false)
+    assert.equal((await apiCall('folders.list')).result.folders[0].repo, null)
+    assert.equal(await fs.readFile(qaConfigPath, 'utf8'), baselineConfig)
+    assert.equal(syncFs.existsSync(`${qaConfigPath}.tmp`), false)
+  } finally { syncFs.renameSync = originalRename }
+  results.push('failed configuration replacement preserves the existing file and rolls back the in-memory link')
+  const linked = await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })
+  assert.equal(linked.ok, true)
+  assert.equal(linked.result.changed, true)
+  const configAfterLink = JSON.parse(await fs.readFile(path.join(temporary, 'profile', 'folders.json'), 'utf8'))
+  assert.deepEqual(configAfterLink.folders, [{ path: globalThis.previewApiFolder, repo: 'fixture/data' }])
+  assert.equal(folderMenu().items[1].enabled, true, 'link immediately enables the existing Push for pending files')
+  const folderLabels = folderMenu().items.filter(item => item.type !== 'separator').map(item => item.label)
+  assert.equal(folderLabels.length, 3)
+  assert.ok(['Preview', '預覽'].includes(folderLabels[0]))
+  assert.equal(folderLabels[1], 'Push')
+  assert.ok(['Delete', '刪除'].includes(folderLabels[2]))
+  assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })).result.changed, false)
+  assert.equal((await apiCall('folders.list')).result.folders[0].repo, 'fixture/data')
+  results.push('Link is absent from the tray; the real local API saves a verified link and immediately enables the existing Push')
   const file = path.join(temporary, 'sample.md')
   await fs.writeFile(file, 'original\n')
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
