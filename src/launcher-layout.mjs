@@ -9,8 +9,8 @@ export function clampBall(position, area) {
   }
 }
 
-export function placePanel(ball, area, preferredHeight = panelSize.height) {
-  const width = Math.min(panelSize.width, area.width)
+export function placePanel(ball, area, preferredHeight = panelSize.height, preferredWidth = panelSize.width) {
+  const width = Math.min(preferredWidth, area.width)
   const height = Math.min(preferredHeight, area.height)
   const left = ball.x - width - 6
   const right = ball.x + ballSize + 6

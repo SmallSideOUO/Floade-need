@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard } from 'electron'
+import { app, BrowserWindow, clipboard, screen } from 'electron'
 import assert from 'node:assert/strict'
 import fs from 'node:fs/promises'
 import syncFs from 'node:fs'
@@ -6,6 +6,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { requestLocalApi } from '../src/local-api-client.mjs'
+import { createFloatingLauncher } from '../src/floating-launcher.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'floade-preview-qa-'))
@@ -71,7 +72,7 @@ source = source.replace('    runDailyPush()', '    // Daily remote pushes disabl
 source = source.replace('    autoPushTimer = setInterval(runDailyPush, 60 * 1000)', '    // Daily timer disabled in QA')
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (false)')
 source = source.replace('  app.whenReady().then(() => {',
-  '  globalThis.previewQA = { openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
+  '  globalThis.previewQA = { loadFolders, openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
 const instrumented = path.join(temporary, 'main.mjs')
 await fs.writeFile(instrumented, source)
 
@@ -151,7 +152,23 @@ try {
   previewQA.openFloadeMenu()
   await until(() => runPanel('document.activeElement.id === "search"'))
   await until(() => runPanel('document.querySelector("#status").textContent === ""'))
-  assert.equal(await runPanel('document.querySelector("#recent-section")'), null)
+  assert.equal(await runPanel('document.querySelector("header").nextElementSibling.id'), 'recent-section')
+  assert.equal(launcher.panel.isResizable(), true)
+  const initialPanelSize = launcher.panel.getBounds()
+  globalThis.previewCursor = { x: initialPanelSize.x + initialPanelSize.width - 10, y: initialPanelSize.y + initialPanelSize.height - 10 }
+  await runPanel('window.floadeLauncher.sizeDrag("start")')
+  globalThis.previewCursor.x += 40
+  globalThis.previewCursor.y += 30
+  await runPanel('window.floadeLauncher.sizeDrag("move")')
+  await runPanel('window.floadeLauncher.sizeDrag("end")')
+  const resizedPanel = launcher.panel.getBounds()
+  const resizeArea = screen.getDisplayMatching(initialPanelSize).workArea
+  assert.ok(Math.abs(resizedPanel.width - Math.min(initialPanelSize.width + 40, resizeArea.x + resizeArea.width - initialPanelSize.x)) <= 2, JSON.stringify({ initialPanelSize, resizedPanel, resizeArea }))
+  assert.ok(Math.abs(resizedPanel.height - Math.min(initialPanelSize.height + 30, resizeArea.y + resizeArea.height - initialPanelSize.y)) <= 2, JSON.stringify({ initialPanelSize, resizedPanel, resizeArea }))
+  assert.deepEqual(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.launcherSize, { width: resizedPanel.width, height: resizedPanel.height })
+  await runPanel('window.floadeLauncher.resize(400)')
+  assert.equal(launcher.panel.getBounds().height, resizedPanel.height, 'content updates cannot overwrite the manually chosen size')
+  results.push('panel is resizable; grip changes both dimensions, persists the size and prevents auto sizing from undoing it')
   assert.equal(await runPanel('document.querySelector(".folder-open").getAttribute("aria-expanded")'), 'false')
   assert.equal(await runPanel('document.querySelectorAll(".folder-documents .document").length'), 0)
   await runPanel('document.querySelector(".folder-open").click()')
@@ -169,17 +186,17 @@ try {
     assert.equal(ballImage.toBitmap()[3], 0, 'the ball window has transparent corners')
     await fs.writeFile(process.env.FLOADE_LAUNCHER_SCREENSHOT.replace('.png', '-ball.png'), ballImage.toPNG())
   }
-  const configBeforeOpen = await fs.readFile(qaConfigPath, 'utf8')
   await runPanel('[...document.querySelectorAll(".folder-documents .document")].find(button => button.querySelector("strong").textContent === "guide.md").click()')
   await until(() => Promise.resolve(previewQA.previewWindows.size === 1))
   const nestedDocumentWindow = [...previewQA.previewWindows.values()][0]
   await until(() => nestedDocumentWindow.webContents.executeJavaScript('Boolean(window.floadePreview && document.querySelector("#editor").value === "Nested fixture\\n")'))
-  assert.equal(await fs.readFile(qaConfigPath, 'utf8'), configBeforeOpen, 'opening a document does not record recent history or rewrite configuration')
+  assert.equal(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).recentDocuments[0].relativePath, 'nested/guide.md')
   nestedDocumentWindow.destroy()
   await until(() => Promise.resolve(previewQA.previewWindows.size === 0))
   await launcher.showPanel(true)
   await until(() => runPanel('document.querySelectorAll(".folder-documents .document").length === 2'))
-  results.push('folder cards expand and collapse; nested Markdown opens directly; expansion survives refresh and reopening; recent history is absent')
+  await until(() => runPanel('document.querySelector("#recent-documents .document strong").textContent === "guide.md"'))
+  results.push('folder cards expand and collapse; nested Markdown opens directly; expansion survives refresh and reopening; recent history is visible at the top')
   await runPanel('document.querySelector("#search").value = "note.md"; document.querySelector("#search").dispatchEvent(new Event("input"))')
   await until(() => runPanel('document.querySelectorAll("#documents .document").length === 1'))
   await runPanel('document.querySelector("#search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))')
@@ -190,6 +207,54 @@ try {
   await until(() => Promise.resolve(previewQA.previewWindows.size === 0))
   await launcher.showPanel(true)
   await until(() => runPanel('document.activeElement.id === "search"'))
+  await runPanel('document.querySelector("#search").value = ""; document.querySelector("#search").dispatchEvent(new Event("input")); document.querySelector("[data-action=create-file]").click()')
+  await until(() => runPanel('document.querySelector("#file-dialog").open'))
+  await runPanel('document.querySelector("#file-name").value = "note"; document.querySelector("#file-form").requestSubmit()')
+  await until(() => runPanel('document.querySelector("#file-error").textContent.length > 0'))
+  assert.equal(await fs.readFile(path.join(globalThis.previewApiFolder, 'note.md'), 'utf8'), 'API fixture\n')
+  assert.equal(await runPanel('document.querySelector("#file-dialog").open'), true)
+  await runPanel('document.querySelector("#file-name").value = "draft"; document.querySelector("#file-form").requestSubmit()')
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 1))
+  assert.equal(await fs.readFile(path.join(globalThis.previewApiFolder, 'draft.md'), 'utf8'), '')
+  const draftWindow = [...previewQA.previewWindows.values()][0]
+  await until(() => draftWindow.webContents.executeJavaScript('document.querySelector("#name").textContent === "draft.md"'))
+  await draftWindow.webContents.executeJavaScript('document.querySelector("#editor").value = "saved draft"; document.querySelector("#editor").dispatchEvent(new Event("input"))')
+  await launcher.showPanel(true)
+  await until(() => runPanel('[...document.querySelectorAll("#recent-documents .document-row")].some(row => row.querySelector("strong").textContent === "draft.md")'))
+  await runPanel('[...document.querySelectorAll("#recent-documents .document-row")].find(row => row.querySelector("strong").textContent === "draft.md").querySelector("[data-file-action=rename]").click(); document.querySelector("#file-name").value = "renamed"; document.querySelector("#file-form").requestSubmit()')
+  await until(() => Promise.resolve(syncFs.existsSync(path.join(globalThis.previewApiFolder, 'renamed.md'))))
+  assert.equal(await fs.readFile(path.join(globalThis.previewApiFolder, 'renamed.md'), 'utf8'), 'saved draft')
+  assert.equal(syncFs.existsSync(path.join(globalThis.previewApiFolder, 'draft.md')), false)
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 1 && [...previewQA.previewWindows.values()][0] !== draftWindow))
+  const renamedWindow = [...previewQA.previewWindows.values()][0]
+  await until(() => renamedWindow.webContents.executeJavaScript('document.querySelector("#editor").value === "saved draft"'))
+  await launcher.showPanel(true)
+  await until(() => runPanel('document.querySelector("#recent-documents .document strong").textContent === "renamed.md"'))
+  await renamedWindow.webContents.executeJavaScript('document.querySelector("#editor").value = "conflicting draft"; document.querySelector("#editor").dispatchEvent(new Event("input"))')
+  await fs.writeFile(path.join(globalThis.previewApiFolder, 'renamed.md'), 'external edit')
+  await runPanel('document.querySelector("#recent-documents [data-file-action=delete]").click(); document.querySelector("#file-form").requestSubmit()')
+  await until(() => runPanel('document.querySelector("#file-error").textContent.length > 0'))
+  assert.equal(await fs.readFile(path.join(globalThis.previewApiFolder, 'renamed.md'), 'utf8'), 'external edit')
+  assert.equal(await renamedWindow.webContents.executeJavaScript('document.querySelector("#editor").value'), 'conflicting draft')
+  await renamedWindow.webContents.executeJavaScript('window.confirm = () => true; document.querySelector("#reload").click()')
+  await until(() => renamedWindow.webContents.executeJavaScript('document.querySelector("#editor").value === "external edit"'))
+  await runPanel('document.querySelector("#file-form").requestSubmit()')
+  await until(() => Promise.resolve(!syncFs.existsSync(path.join(globalThis.previewApiFolder, 'renamed.md'))))
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 0))
+  await until(() => runPanel('!document.querySelector("#file-dialog").open && ![...document.querySelectorAll(".document strong")].some(item => item.textContent === "renamed.md")'))
+  results.push('panel creates a document and opens it; rename saves an open draft and reopens the new path; delete preserves conflicts and moves the resolved file to trash; recents follow both changes')
+  await launcher.showPanel(true)
+  if (process.env.FLOADE_LAUNCHER_SCREENSHOT) {
+    // Show the populated recent section and the expanded folder in the preview.
+    const bounds = launcher.panel.getBounds()
+    globalThis.previewCursor = { x: bounds.x + bounds.width - 10, y: bounds.y + bounds.height - 10 }
+    await runPanel('window.floadeLauncher.sizeDrag("start")')
+    globalThis.previewCursor = { x: globalThis.previewCursor.x, y: globalThis.previewCursor.y + 150 }
+    await runPanel('window.floadeLauncher.sizeDrag("move")')
+    await runPanel('window.floadeLauncher.sizeDrag("end")')
+    await runPanel('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await fs.writeFile(process.env.FLOADE_LAUNCHER_SCREENSHOT, (await launcher.panel.webContents.capturePage()).toPNG())
+  }
   await runPanel('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))')
   assert.equal(launcher.panel.__qaShown, false)
   await launcher.showPanel(true)
@@ -601,6 +666,21 @@ try {
   assert.equal(await reopened.webContents.executeJavaScript('localStorage.getItem("floade.translation.languageUsage.v1")'), historyBeforeClose)
   results.push('language usage persists when the translation window is closed and reopened')
   results.push('translation window closes and can be reopened from the floating panel')
+  const savedLauncherState = JSON.parse(await fs.readFile(qaConfigPath, 'utf8'))
+  launcher.dispose()
+  previewQA.loadFolders()
+  globalThis.restoredLauncher = createFloatingLauncher({
+    appPath: root, iconPath: () => path.join(root, 'assets', 'tray.ico'), getLocale: () => 'zh-TW', getOpacity: () => 1,
+    getState: () => ({ visible: savedLauncherState.settings.launcherVisible, position: savedLauncherState.settings.launcherPosition, size: savedLauncherState.settings.launcherSize }),
+    readData: previewQA.readLauncherData, openDocument: async () => false, mutateDocument: async () => {}, action: async () => {},
+    saveVisible: () => {}, savePosition: () => {}, saveSize: () => {}, onVisibilityChange: () => {}
+  })
+  await restoredLauncher.showPanel(true)
+  const restoredBounds = restoredLauncher.panel.getBounds()
+  assert.ok(Math.abs(restoredBounds.width - savedLauncherState.settings.launcherSize.width) <= 2)
+  assert.ok(Math.abs(restoredBounds.height - savedLauncherState.settings.launcherSize.height) <= 2)
+  await until(() => restoredLauncher.panel.webContents.executeJavaScript('document.querySelectorAll("#recent-documents .document").length === 2'))
+  results.push('loading saved configuration and rebuilding the panel restores its chosen size and recent documents')
   console.log(JSON.stringify({ ok: true, checks: results }, null, 2))
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: true, checks: results }, null, 2))
 } catch (error) {
@@ -609,6 +689,7 @@ try {
   process.exitCode = 1
 } finally {
   globalThis.previewQA?.getLauncher()?.dispose()
+  globalThis.restoredLauncher?.dispose()
   app.removeListener('browser-window-created', hideQAWindow)
   globalThis.fetch = originalFetch
   for (const window of BrowserWindow.getAllWindows()) window.destroy()

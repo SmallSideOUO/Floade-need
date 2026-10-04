@@ -11,6 +11,9 @@ test('restored ball and panel stay within positive and negative monitor work are
       const panel = placePanel(ball, area, 320)
       assert.ok(panel.x >= area.x && panel.y >= area.y)
       assert.ok(panel.x + panel.width <= area.x + area.width && panel.y + panel.height <= area.y + area.height)
+      const resized = placePanel(ball, area, 10000, 10000)
+      assert.ok(resized.x >= area.x && resized.y >= area.y)
+      assert.ok(resized.x + resized.width <= area.x + area.width && resized.y + resized.height <= area.y + area.height)
     }
   }
 })
@@ -22,6 +25,7 @@ test('panel chooses the available side and shrinks to fit; hover bounds include 
   assert.ok(placePanel(rightBall, area).x < rightBall.x)
   assert.ok(placePanel(leftBall, area).x > leftBall.x + ballSize)
   assert.equal(placePanel(leftBall, area, 310).height, 310)
+  assert.equal(placePanel(leftBall, area, 520, 600).width, 600)
   assert.equal(containsPoint({ x: 10, y: 10, width: 50, height: 50 }, { x: 10, y: 10 }), true)
   assert.equal(containsPoint({ x: 10, y: 10, width: 50, height: 50 }, { x: 60, y: 20 }), false)
 })

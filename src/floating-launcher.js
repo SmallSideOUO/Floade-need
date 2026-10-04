@@ -28,7 +28,13 @@ if (isBall) {
   const search = document.querySelector('#search')
   const folders = document.querySelector('#folders')
   const documents = document.querySelector('#documents')
+  const recent = document.querySelector('#recent-documents')
   const status = document.querySelector('#status')
+  const fileDialog = document.querySelector('#file-dialog')
+  const fileName = document.querySelector('#file-name')
+  const fileSubmit = document.querySelector('#file-submit')
+  let fileRequest
+  let mutating = false
   let data = { folders: [], documents: [], indexing: true }
   let documentButtons = []
   let activeIndex = -1
@@ -36,7 +42,7 @@ if (isBall) {
   const expandedFolders = new Set()
   const key = document => `${document.folderPath}\n${document.relativePath}`
   function resize() {
-    const fixedHeight = [...panel.children].filter(child => child.id !== 'items' && getComputedStyle(child).display !== 'none')
+    const fixedHeight = [...panel.children].filter(child => !['items', 'file-dialog'].includes(child.id) && getComputedStyle(child).display !== 'none')
       .reduce((height, child) => { const style = getComputedStyle(child); return height + child.offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom) }, 0)
     void window.floadeLauncher.resize(fixedHeight + folders.scrollHeight + documents.scrollHeight + 20)
   }
@@ -65,8 +71,71 @@ if (isBall) {
     button.append(name, location)
     button.addEventListener('click', () => void open(document))
     button.addEventListener('mouseenter', () => { activeIndex = documentButtons.indexOf(button); updateActive() })
-    return button
+    const row = window.document.createElement('div')
+    row.className = 'document-row'
+    row.append(button)
+    const actions = window.document.createElement('div')
+    actions.className = 'document-actions'
+    for (const [operation, symbol] of [['rename', '✎'], ['delete', '×']]) {
+      const control = window.document.createElement('button')
+      control.type = 'button'
+      control.dataset.fileAction = operation
+      control.textContent = symbol
+      control.title = t(`launcher.${operation}File`)
+      control.setAttribute('aria-label', control.title)
+      control.addEventListener('click', () => editFile(operation, document))
+      actions.append(control)
+    }
+    row.append(actions)
+    return row
   }
+  function editFile(operation, file) {
+    fileRequest = { operation, folderPath: file.folderPath, relativePath: file.relativePath }
+    document.querySelector('#file-dialog-title').textContent = t(`launcher.${operation}File`)
+    document.querySelector('#file-dialog-description').textContent = operation === 'delete' ? t('launcher.trashConfirm', { name: file.name }) : t('launcher.nameHint')
+    fileName.hidden = operation === 'delete'
+    fileName.value = operation === 'rename' ? file.name : ''
+    fileSubmit.textContent = t(operation === 'delete' ? 'launcher.deleteFile' : 'common.save')
+    document.querySelector('#file-error').textContent = ''
+    fileDialog.showModal()
+    void window.floadeLauncher.interacting(true)
+    if (!fileName.hidden) { fileName.focus(); fileName.setSelectionRange(0, fileName.value.replace(/\.md$/i, '').length) }
+  }
+  fileDialog.addEventListener('cancel', event => { if (mutating) event.preventDefault() })
+  fileDialog.addEventListener('close', () => void window.floadeLauncher.interacting(false))
+  document.querySelector('#file-cancel').addEventListener('click', () => { if (!mutating) fileDialog.close() })
+  document.querySelector('#file-form').addEventListener('submit', async event => {
+    event.preventDefault()
+    if (mutating) return
+    mutating = true
+    fileSubmit.disabled = true
+    const result = await window.floadeLauncher.mutate({ ...fileRequest, name: fileName.value })
+    mutating = false
+    fileSubmit.disabled = false
+    if (!result?.ok) { document.querySelector('#file-error').textContent = result?.message || t('launcher.actionFailed'); return }
+    const created = fileRequest.operation === 'create'
+    expandedFolders.add(fileRequest.folderPath)
+    fileDialog.close()
+    if (created) await open(result.document)
+  })
+  const grip = document.querySelector('#resize-grip')
+  grip.hidden = false
+  let sizing = false
+  grip.addEventListener('pointerdown', event => {
+    if (event.button !== 0) return
+    sizing = true
+    grip.setPointerCapture(event.pointerId)
+    void window.floadeLauncher.sizeDrag('start')
+  })
+  grip.addEventListener('pointermove', () => { if (sizing) void window.floadeLauncher.sizeDrag('move') })
+  const finishSize = event => {
+    if (!sizing) return
+    sizing = false
+    if (grip.hasPointerCapture(event.pointerId)) grip.releasePointerCapture(event.pointerId)
+    void window.floadeLauncher.sizeDrag('end')
+  }
+  grip.addEventListener('pointerup', finishSize)
+  grip.addEventListener('pointercancel', finishSize)
   async function perform(name, folderPath) {
     const result = await window.floadeLauncher.action(name, folderPath)
     if (!result?.ok) { status.className = 'error'; status.textContent = result?.message || t('launcher.actionFailed') }
@@ -78,6 +147,15 @@ if (isBall) {
     const matches = value => terms.every(term => value.toLocaleLowerCase().includes(term))
     folders.replaceChildren()
     documents.replaceChildren()
+    recent.replaceChildren()
+    const recentFiles = data.documents.filter(file => file.lastOpened).sort((a, b) => b.lastOpened - a.lastOpened).slice(0, 8)
+    for (const file of recentFiles) recent.append(documentButton(file))
+    if (!recentFiles.length) {
+      const empty = document.createElement('p')
+      empty.className = 'recent-empty'
+      empty.textContent = t('launcher.noRecent')
+      recent.append(empty)
+    }
     const visibleFolders = data.folders.filter(folder => matches(`${folder.name} ${folder.path} ${folder.repo || ''}`))
     for (const folder of visibleFolders) {
       const card = document.createElement('article')
@@ -115,6 +193,13 @@ if (isBall) {
       })
       const actions = document.createElement('div')
       actions.className = 'folder-actions'
+      const addFile = document.createElement('button')
+      addFile.type = 'button'
+      addFile.dataset.action = 'create-file'
+      addFile.textContent = t('launcher.newFile')
+      addFile.disabled = !folder.exists || folder.busy
+      addFile.addEventListener('click', () => editFile('create', { folderPath: folder.path }))
+      actions.append(addFile)
       for (const [action, label] of [['preview', 'launcher.preview'], ['push', folder.pushing ? 'launcher.pushing' : 'launcher.push'], ['remove', 'launcher.delete']]) {
         const button = document.createElement('button')
         button.type = 'button'
@@ -146,7 +231,7 @@ if (isBall) {
     }
     const visibleDocuments = query ? data.documents.filter(file => matches(`${file.name} ${file.folderName} ${file.relativePath}`)).slice(0, 40) : []
     for (const file of visibleDocuments) documents.append(documentButton(file))
-    documentButtons = [...document.querySelectorAll(query ? '#documents .document' : '#folders .document')]
+    documentButtons = [...document.querySelectorAll(query ? '#documents .document' : '#recent-documents .document, #folders .document')]
     activeIndex = documentButtons.findIndex(button => button.dataset.key === previous)
     if (activeIndex < 0 && query && documentButtons.length) activeIndex = 0
     updateActive()
@@ -173,6 +258,7 @@ if (isBall) {
   for (const name of ['add-folder', 'text-translate', 'screen-translate', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
   window.addEventListener('keydown', event => {
     if (event.isComposing) return
+    if (fileDialog.open) return
     if (event.key === 'Escape') { event.preventDefault(); window.floadeLauncher.close() }
     if (event.target === search && ['ArrowDown', 'ArrowUp'].includes(event.key) && documentButtons.length) {
       event.preventDefault()

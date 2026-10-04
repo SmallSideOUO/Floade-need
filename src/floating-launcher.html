@@ -10,6 +10,7 @@
     <button id="ball" type="button" data-i18n-aria="launcher.open"><span class="light"></span></button>
     <main id="panel" hidden>
       <header><span class="panel-brand"><i></i>Floade</span><div><button id="settings" class="quiet" type="button" data-i18n="settings.heading">設定</button><button id="close" class="quiet" type="button" data-i18n-title="common.close">×</button></div></header>
+      <section id="recent-section"><div class="list-heading"><span data-i18n="launcher.recent">最近文件</span></div><div id="recent-documents"></div></section>
       <div class="quick-actions">
         <button id="add-folder" type="button"><span aria-hidden="true">＋</span><small data-i18n="launcher.addFolder">新增資料夾</small></button>
         <button id="text-translate" type="button"><span aria-hidden="true">文</span><small data-i18n="launcher.translate">文字翻譯</small></button>
@@ -20,7 +21,9 @@
       <div id="items"><div id="folders"></div><div id="documents"></div></div>
       <p id="status" aria-live="polite" data-i18n="launcher.loading">正在讀取文件…</p>
       <footer><span data-i18n="launcher.dragHint">拖曳小球可移動位置</span><button id="quit" class="quiet" type="button" data-i18n="launcher.quit">退出</button></footer>
+      <dialog id="file-dialog"><form id="file-form"><strong id="file-dialog-title"></strong><p id="file-dialog-description"></p><input id="file-name" autocomplete="off" data-i18n-aria="launcher.fileName" data-i18n-placeholder="launcher.fileName"><p id="file-error" aria-live="polite"></p><div class="dialog-actions"><button id="file-cancel" type="button" data-i18n="common.cancel">取消</button><button id="file-submit" type="submit"></button></div></form></dialog>
     </main>
+    <button id="resize-grip" type="button" hidden data-i18n-title="launcher.resize" data-i18n-aria="launcher.resize">◢</button>
     <script src="./i18n-renderer.js"></script>
     <script src="./floating-launcher.js"></script>
   </body>

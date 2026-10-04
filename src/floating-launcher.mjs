@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen } from 'electron'
 import path from 'node:path'
 import { ballSize, clampBall, placePanel, containsPoint } from './launcher-layout.mjs'
 
-export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, action, saveVisible, savePosition, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
+export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, mutateDocument, action, saveVisible, savePosition, saveSize, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
   let visible = getState().visible
   let keyboardMode = false
   let desiredPanel = false
@@ -11,13 +11,18 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   let hoverTimer
   let disposed = false
   let dataRevision = 0
-  let panelHeight = 320
+  let manualSize = getState().size
+  let panelHeight = manualSize?.height || 450
+  let resizing
+  let nativeSizing = false
+  let interacting = false
   const initial = getState().position
   const area = screen.getDisplayNearestPoint(initial || cursor()).workArea
   const position = clampBall(initial || { x: area.x + area.width - 84, y: area.y + Math.round(area.height / 2) }, area)
   const createWindow = (mode, bounds) => new BrowserWindow({
     ...bounds, icon: iconPath(), opacity: getOpacity(), frame: false, transparent: true,
-    backgroundColor: '#00000000', hasShadow: false, resizable: false, maximizable: false,
+    backgroundColor: '#00000000', hasShadow: false, resizable: mode === 'panel', maximizable: false,
+    ...(mode === 'panel' ? { minWidth: 320, minHeight: 360 } : {}),
     minimizable: false, fullscreenable: false, alwaysOnTop: true, skipTaskbar: true,
     focusable: mode === 'panel', show: false,
     webPreferences: { preload: path.join(appPath, 'src', 'floating-launcher-preload.cjs'), contextIsolation: true, nodeIntegration: false }
@@ -52,7 +57,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   function reposition() {
     const bounds = ball.getBounds()
     const displayArea = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y }).workArea
-    panel.setBounds(placePanel(bounds, displayArea, panelHeight))
+    panel.setBounds(placePanel(bounds, displayArea, manualSize?.height || panelHeight, manualSize?.width || 340))
   }
   async function showPanel(focus = false) {
     if (disposed || dragging) return
@@ -71,7 +76,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     clearTimeout(closeTimer)
     clearTimeout(hoverTimer)
     closeTimer = setTimeout(() => {
-      if (disposed || keyboardMode || dragging) return
+      if (disposed || keyboardMode || dragging || resizing || nativeSizing || interacting) return
       const point = cursor()
       if ((visible && containsPoint(ball.getBounds(), point)) || (desiredPanel && containsPoint(panel.getBounds(), point))) { scheduleClose(); return }
       hidePanel()
@@ -117,8 +122,38 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   handle('launcher:close', event => { if (fromPanel(event)) hidePanel() })
   handle('launcher:resize', (event, height) => {
     if (!fromPanel(event) || !Number.isFinite(height)) return
-    panelHeight = Math.max(270, Math.min(450, Math.ceil(height)))
+    if (manualSize || resizing) return
+    panelHeight = Math.max(360, Math.min(550, Math.ceil(height)))
     if (desiredPanel) reposition()
+  })
+  handle('launcher:interacting', (event, value) => {
+    if (!fromPanel(event)) return
+    interacting = Boolean(value)
+    if (interacting) clearTimeout(closeTimer)
+    else scheduleClose()
+  })
+  const rememberSize = () => {
+    const bounds = panel.getBounds()
+    manualSize = { width: bounds.width, height: bounds.height }
+    saveSize(manualSize)
+  }
+  handle('launcher:size-drag', (event, phase) => {
+    if (!fromPanel(event)) return
+    const point = cursor()
+    if (phase === 'start') { resizing = { point: { ...point }, bounds: panel.getBounds() }; clearTimeout(closeTimer) }
+    else if (phase === 'move' && resizing) {
+      const area = screen.getDisplayMatching(resizing.bounds).workArea
+      const width = Math.round(Math.max(320, Math.min(area.x + area.width - resizing.bounds.x, resizing.bounds.width + point.x - resizing.point.x)))
+      const height = Math.round(Math.max(360, Math.min(area.y + area.height - resizing.bounds.y, resizing.bounds.height + point.y - resizing.point.y)))
+      panel.setSize(width, height)
+    } else if (phase === 'end' && resizing) { resizing = undefined; rememberSize(); scheduleClose() }
+  })
+  panel.on('will-resize', () => { nativeSizing = true; clearTimeout(closeTimer) })
+  panel.on('resized', () => { rememberSize(); nativeSizing = false; scheduleClose() })
+  handle('launcher:mutate', async (event, request) => {
+    if (!fromPanel(event)) return { ok: false }
+    try { return { ok: true, document: await mutateDocument(request) } }
+    catch (error) { return { ok: false, message: error.message } }
   })
   handle('launcher:open', async (event, document) => {
     if (!fromPanel(event)) return { ok: false }
@@ -134,7 +169,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     try { await action(name, folderPath); return { ok: true } } catch (error) { return { ok: false, message: error.message } }
   })
   panel.on('focus', () => { if (desiredPanel) { keyboardMode = true; clearTimeout(closeTimer) } })
-  panel.on('blur', () => { if (keyboardMode) hidePanel() })
+  panel.on('blur', () => { if (keyboardMode && !interacting && !resizing && !nativeSizing) hidePanel() })
   panel.on('close', event => { if (!disposed) { event.preventDefault(); hidePanel() } })
   const onDisplayChange = () => {
     if (disposed) return

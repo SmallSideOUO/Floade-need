@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, shell, Tray, nativeImage } from 'electron'
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -11,6 +11,7 @@ import { normalizeLocale, translate } from './i18n-main.mjs'
 import { createMarkdownDocument } from './markdown-document.mjs'
 import { createLocalApi, attachControlSocket } from './local-api.mjs'
 import { createFloatingLauncher } from './floating-launcher.mjs'
+import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './launcher-files.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -30,6 +31,7 @@ if (!app.requestSingleInstanceLock()) {
   let registeredTranslationShortcut
   let screenTranslator
   let floatingLauncher
+  let recentDocuments = []
   let documentIndex = { signature: '', updated: 0, documents: [] }
   let documentScan
   let autoPushTimer
@@ -40,6 +42,7 @@ if (!app.requestSingleInstanceLock()) {
     language: 'system',
     opacity: 1,
     launcherVisible: true,
+    launcherSize: null,
     launcherPosition: null
   }
   const pushingFolders = new Set()
@@ -75,13 +78,18 @@ if (!app.requestSingleInstanceLock()) {
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1,
         launcherVisible: config.settings?.launcherVisible !== false,
+        launcherSize: Number.isFinite(config.settings?.launcherSize?.width) && Number.isFinite(config.settings?.launcherSize?.height)
+          ? { width: Math.max(320, config.settings.launcherSize.width), height: Math.max(360, config.settings.launcherSize.height) } : null,
         launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
           ? { x: config.settings.launcherPosition.x, y: config.settings.launcherPosition.y } : null
       }
       lastAutoPushDate = typeof config.lastAutoPushDate === 'string' ? config.lastAutoPushDate : null
+      recentDocuments = Array.isArray(config.recentDocuments) ? config.recentDocuments.filter(file =>
+        typeof file?.folderPath === 'string' && typeof file?.relativePath === 'string' && Number.isFinite(file?.lastOpened)).slice(0, 30) : []
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null }
+      recentDocuments = []
       lastAutoPushDate = null
     }
   }
@@ -90,7 +98,7 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
     const temporary = `${configFile}.tmp`
     try {
-      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
+      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate, recentDocuments }, null, 2)}\n`, 'utf8')
       fs.renameSync(temporary, configFile)
     } catch (error) {
       try { fs.unlinkSync(temporary) } catch {}
@@ -231,6 +239,12 @@ if (!app.requestSingleInstanceLock()) {
   async function openMarkdownPreview(folderPath, relativePath) {
     const filePath = markdownPath(folderPath, relativePath)
     if (!filePath || !fs.existsSync(filePath)) return
+    if (folders.some(folder => folder.path === folderPath)) {
+      recentDocuments = [{ folderPath, relativePath, lastOpened: Date.now() }, ...recentDocuments.filter(file =>
+        file.folderPath !== folderPath || file.relativePath !== relativePath)].slice(0, 30)
+      saveFolders()
+      void floatingLauncher?.refreshData()
+    }
 
     const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
     const existingWindow = previewWindows.get(key)
@@ -718,7 +732,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function hasPushableChanges(folder) {
-    if (!folder.repo || pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || !fs.existsSync(folder.path)) {
+    if (!folder.repo || pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path) || !fs.existsSync(folder.path)) {
       return false
     }
 
@@ -777,8 +791,9 @@ if (!app.requestSingleInstanceLock()) {
     return {
       folders: folders.map(folder => ({ ...folder, name: path.basename(folder.path) || folder.path,
         exists: fs.existsSync(folder.path), pushing: pushingFolders.has(folder.path),
-        busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path), canPush: hasPushableChanges(folder) })),
-      documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath)),
+        busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path), canPush: !documentMutations.has(folder.path) && hasPushableChanges(folder) })),
+      documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath))
+        .map(document => ({ ...document, lastOpened: recentDocuments.find(file => file.folderPath === document.folderPath && file.relativePath === document.relativePath)?.lastOpened || 0 })),
       indexing: Boolean(documentScan)
     }
   }
@@ -808,6 +823,52 @@ if (!app.requestSingleInstanceLock()) {
       return removeFolder(folder)
     }
     throw new Error('Unknown Floade action')
+  }
+
+  const documentMutations = new Set()
+  async function mutateLauncherDocument(request) {
+    const folder = folders.find(folder => folder.path === request?.folderPath)
+    if (!folder) throw new Error(tr('folder.missing'))
+    if (documentMutations.has(folder.path) || pushingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
+    documentMutations.add(folder.path)
+    try {
+      let relativePath
+      if (request.operation === 'create') relativePath = createLauncherFile(folder.path, request.name)
+      else if (['rename', 'delete'].includes(request.operation)) {
+        const filePath = managedDocumentPath(folder.path, request.relativePath)
+        const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
+        const editor = previewWindows.get(key)
+        if (editor && !editor.isDestroyed()) {
+          const editorContents = editor.webContents
+          const closed = await new Promise(resolve => {
+            const finish = value => { editor.removeListener('closed', onClosed); editorContents.removeListener('will-prevent-unload', onBlocked); resolve(value) }
+            const onClosed = () => finish(true)
+            const onBlocked = () => finish(false)
+            editor.once('closed', onClosed)
+            editorContents.once('will-prevent-unload', onBlocked)
+            editor.close()
+          })
+          if (!closed) { editor.show(); editor.focus(); throw new Error(tr('launcher.closeDocument')) }
+        }
+        if (request.operation === 'rename') relativePath = renameLauncherFile(folder.path, request.relativePath, request.name)
+        else await shell.trashItem(filePath)
+        recentDocuments = recentDocuments.flatMap(file => file.folderPath === folder.path && file.relativePath === request.relativePath
+          ? relativePath ? [{ ...file, relativePath }] : [] : [file])
+        saveFolders()
+        if (relativePath && editor) await openMarkdownPreview(folder.path, relativePath)
+      } else throw new Error('invalidPath')
+      if (documentScan) await documentScan
+      documentIndex.updated = 0
+      readLauncherData()
+      if (documentScan) await documentScan
+      void floatingLauncher?.refreshData()
+      return { folderPath: folder.path, relativePath }
+    } catch (error) {
+      documentIndex.updated = 0
+      if (error.code === 'EEXIST') throw new Error(tr('launcher.fileExists'))
+      if (['invalidName', 'invalidPath'].includes(error.message)) throw new Error(tr(`launcher.${error.message}`))
+      throw error
+    } finally { documentMutations.delete(folder.path); void floatingLauncher?.refreshData() }
   }
 
   app.on('window-all-closed', () => {})
@@ -855,10 +916,12 @@ if (!app.requestSingleInstanceLock()) {
     tray.setToolTip('Floade')
     floatingLauncher = createFloatingLauncher({
       appPath: app.getAppPath(), iconPath: windowIconPath, getLocale: effectiveLocale, getOpacity: () => settings.opacity,
-      getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition }),
+      getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition, size: settings.launcherSize }),
       readData: readLauncherData, openDocument: openLauncherDocument, action: launcherAction,
+      mutateDocument: mutateLauncherDocument,
       saveVisible: visible => { settings.launcherVisible = visible; saveFolders() },
       savePosition: position => { settings.launcherPosition = position; saveFolders() },
+      saveSize: size => { settings.launcherSize = size; saveFolders() },
       onVisibilityChange: refreshTrayMenu
     })
     refreshTrayMenu()

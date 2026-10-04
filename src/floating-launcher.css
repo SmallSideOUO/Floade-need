@@ -54,7 +54,7 @@ button:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
 .quick-actions button:hover { background: #25252a; border-color: #44444d; color: #fff; }
 .quick-actions span { font-size: 18px; line-height: 20px; }
 .quick-actions small { font-size: 10px; }
-#items { flex: 1; min-height: 70px; overflow: auto; padding: 0 10px; }
+#items { flex: 1; min-height: 0; overflow: auto; padding: 0 10px; }
 #documents { min-height: 0; overflow: visible; padding: 0; }
 #folders { max-height: none; overflow: visible; }
 .folder { display: block; padding: 10px; margin-bottom: 7px; border: 1px solid #27272d; border-radius: 10px; background: #151518; }
@@ -75,3 +75,25 @@ button:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
 .folder-empty { padding: 12px 8px; color: #73737c; font-size: 11px; }
 footer { align-items: center; }
 footer span { padding-left: 5px; font-size: 9px; color: #62626c; }
+#recent-section { flex: 0 0 auto; margin: 0 12px 10px; padding-bottom: 8px; border-bottom: 1px solid #25252a; }
+#recent-section .list-heading { margin: 0 2px 4px; }
+#recent-documents { max-height: 82px; overflow: auto; }
+.recent-empty { margin: 6px 8px; color: #62626c; font-size: 10px; }
+.quick-actions, .search-row, .list-heading, header { flex-shrink: 0; }
+.document-row { display: flex; align-items: center; min-width: 0; }
+.document-row .document { min-width: 0; flex: 1; }
+.document-actions { display: flex; flex-shrink: 0; gap: 2px; opacity: 0; }
+.document-row:hover .document-actions, .document-row:focus-within .document-actions { opacity: 1; }
+.document-actions button { padding: 5px 6px; border: 0; border-radius: 5px; background: transparent; color: #85858e; font-size: 14px; }
+.document-actions button:hover { color: #fff; background: #303037; }
+.document-actions [data-file-action="delete"]:hover { color: #efaaa0; }
+#resize-grip { position: fixed; right: 5px; bottom: 5px; width: 16px; height: 16px; padding: 0; border: 0; background: transparent; color: #55555e; cursor: nwse-resize; touch-action: none; font-size: 12px; }
+footer { padding-right: 22px; }
+dialog { width: calc(100% - 40px); max-width: 400px; padding: 18px; border: 1px solid #44444d; border-radius: 12px; background: #17171b; color: #e4e4e9; }
+dialog::backdrop { background: #0009; }
+dialog strong { font-size: 13px; }
+dialog p { font-size: 11px; color: #92929c; line-height: 1.6; overflow-wrap: anywhere; }
+#file-name { width: 100%; padding: 8px; border: 1px solid #44444d; border-radius: 6px; background: #0d0d0f; color: #eee; font-size: 12px; }
+#file-error { color: #ed8b7f; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.dialog-actions button { padding: 6px 12px; border: 1px solid #44444d; border-radius: 6px; background: #27272d; color: #ddd; font-size: 11px; }

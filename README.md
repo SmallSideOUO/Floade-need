@@ -27,6 +27,9 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Provides a draggable transparent floating ball with a breathing white center; position and visibility are remembered locally
 - Opens a compact hover panel with Add folder, translation tools, and folder cards for Preview, Push, and Delete; the panel stays open when the pointer moves into it and closes after leaving
 - Expands folder cards to show their Markdown files, including files in subfolders; click a file to open it directly
+- Creates Markdown documents from folder cards; document rows provide Rename and Delete, with deletion moving the file to the Recycle Bin after confirmation
+- Shows recently opened documents at the top of the panel; renaming and deletion update that list
+- Resizes the floating panel using its edges or bottom-right grip and remembers the chosen size
 - Searches Markdown files across added folders; the global shortcut focuses search, Enter opens the selected document, and Esc closes the panel
 - Adds existing local folders through the native folder picker
 - Opens one or more local Markdown files in editable desktop windows
@@ -109,6 +112,8 @@ Hover over the floating ball, or click it to focus the panel:
 3. Select **Push** on its folder card.
 
 The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. Use **Quit** at the bottom of the panel or `floade stop` to exit.
+
+The panel's top section lists recently opened documents. Select **+ File** (`＋文件`) on a folder card to create and open a new Markdown document. Hover over a document row to reveal its **Rename** and **Delete** buttons. Names receive a `.md` extension automatically, and existing files are never overwritten. Delete asks for confirmation and moves the document to the Recycle Bin. An open document is saved before renaming or deleting; a conflicting draft blocks the operation until you resolve it. Drag a panel edge or its bottom-right grip to resize it; the size is remembered across restarts.
 
 Select **Preview** (`預覽`) on a folder card to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
