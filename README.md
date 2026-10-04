@@ -30,8 +30,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Supports always-on-top controls in both the Markdown picker and document windows
 - Provides a global shortcut recorder with chords of up to three keys
 - Translates a dragged screen region with bundled local OCR and Google Translate
-- Lets translation windows change or swap languages and edit both the source and translated text
-- Opens a pinnable **Text translation** window from the tray menu; type or paste text and click **Translate** or press `Ctrl+Enter`
+- Lets translation windows change languages and edit both the source and translated text
+- Opens a pinnable **Text translation** window from the tray menu; type in either box for automatic translation in both directions; **Translate** or `Ctrl+Enter` translates immediately
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
 - Opens a GitHub sign-in flow from the Link window when GitHub CLI is signed out, then lists private repositories

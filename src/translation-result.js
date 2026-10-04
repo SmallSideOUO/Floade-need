@@ -4,7 +4,6 @@ const confidence = document.querySelector('#confidence')
 const translation = document.querySelector('#translation')
 const source = document.querySelector('#source')
 const status = document.querySelector('#status')
-const swapButton = document.querySelector('#swap')
 const copyButton = document.querySelector('#copy')
 const pinButton = document.querySelector('#pin')
 const closeButton = document.querySelector('#close')
@@ -17,10 +16,16 @@ const t = (key, variables) => window.floadeI18n.t(key, variables)
 let translating = false
 let detectedLanguage = ''
 let inputRevision = 0
+let activeSide = 'source'
+let debounceTimer
+let pendingRequest = false
+let composing = false
+
+const inputField = () => activeSide === 'source' ? source : translation
+const outputField = () => activeSide === 'source' ? translation : source
 
 function updateTranslateButton() {
-  translateButton.disabled = translating || !source.value.trim()
-  swapButton.disabled = translating || !translation.value.trim()
+  translateButton.disabled = translating || composing || !inputField().value.trim()
 }
 
 function addLanguageOptions(select) {
@@ -44,43 +49,72 @@ function ensureLanguageOption(select, value, label = value) {
 function setBusy(value) {
   translating = value
   updateTranslateButton()
-  sourceLanguage.disabled = value
-  targetLanguage.disabled = value
-  translation.readOnly = value
   status.className = ''
   status.textContent = value ? t('translation.translating') : ''
 }
 
 async function retranslate() {
-  if (translating || !source.value.trim()) return
+  if (translating || composing || !inputField().value.trim()) return
+  pendingRequest = false
   const revision = inputRevision
+  const forward = activeSide === 'source'
+  const output = outputField()
+  const upperLanguage = sourceLanguage.value === 'auto' ? detectedLanguage || 'en' : sourceLanguage.value
   setBusy(true)
   let result
   try {
     result = await window.floadeTranslation.translate({
-      text: source.value,
-      sourceLanguage: sourceLanguage.value,
-      targetLanguage: targetLanguage.value
+      text: inputField().value,
+      sourceLanguage: forward ? sourceLanguage.value : targetLanguage.value,
+      targetLanguage: forward ? targetLanguage.value : upperLanguage
     })
   } catch (error) {
     result = { success: false, message: error?.message || t('translation.failed') }
   }
   setBusy(false)
   // Keep results tied to the submitted text when the user edits during a request.
-  if (revision !== inputRevision) return
+  if (revision !== inputRevision) {
+    if (pendingRequest) void retranslate()
+    return
+  }
   if (!result.success) {
     status.textContent = result.message || t('translation.failed')
     status.className = 'error'
     return
   }
-  detectedLanguage = result.detectedLanguage || detectedLanguage
-  ensureLanguageOption(sourceLanguage, result.sourceLanguage, result.sourceLanguageName)
-  translation.value = result.translation
+  if (forward) {
+    detectedLanguage = result.detectedLanguage || detectedLanguage
+    ensureLanguageOption(sourceLanguage, result.sourceLanguage, result.sourceLanguageName)
+  } else if (sourceLanguage.value === 'auto' && !detectedLanguage) {
+    sourceLanguage.value = upperLanguage
+  }
+  output.value = result.translation
   updateTranslateButton()
   status.textContent = t('translation.updated')
   setTimeout(() => {
     if (!translating && status.textContent === t('translation.updated')) status.textContent = ''
   }, 1400)
+}
+
+function requestTranslation() {
+  clearTimeout(debounceTimer)
+  pendingRequest = true
+  void retranslate()
+}
+
+function edit(side) {
+  activeSide = side
+  inputRevision += 1
+  pendingRequest = false
+  clearTimeout(debounceTimer)
+  confidence.hidden = true
+  status.textContent = ''
+  status.className = ''
+  outputField().value = ''
+  updateTranslateButton()
+  if (!composing && inputField().value.trim()) {
+    debounceTimer = setTimeout(requestTranslation, 500)
+  }
 }
 
 addLanguageOptions(sourceLanguage)
@@ -102,31 +136,29 @@ window.floadeTranslation.onData(data => {
   if (!source.value) source.focus()
 })
 
-source.addEventListener('input', () => {
-  inputRevision += 1
-  translation.value = ''
-  detectedLanguage = ''
-  confidence.hidden = true
-  status.textContent = ''
-  updateTranslateButton()
-})
-translateButton.addEventListener('click', () => void retranslate())
-translation.addEventListener('input', updateTranslateButton)
-sourceLanguage.addEventListener('change', () => void retranslate())
-targetLanguage.addEventListener('change', () => void retranslate())
-
-swapButton.addEventListener('click', async () => {
-  const oldSourceLanguage = sourceLanguage.value === 'auto' ? detectedLanguage : sourceLanguage.value
-  const oldTargetLanguage = targetLanguage.value
-  const editedTranslation = translation.value
-  source.value = editedTranslation
-  source.dispatchEvent(new Event('input'))
-  ensureLanguageOption(sourceLanguage, oldTargetLanguage)
-  ensureLanguageOption(targetLanguage, oldSourceLanguage)
-  sourceLanguage.value = oldTargetLanguage
-  targetLanguage.value = oldSourceLanguage || 'en'
-  await retranslate()
-})
+for (const [side, field] of [['source', source], ['translation', translation]]) {
+  field.addEventListener('input', () => edit(side))
+  field.addEventListener('compositionstart', () => {
+    composing = true
+    inputRevision += 1
+    pendingRequest = false
+    clearTimeout(debounceTimer)
+    updateTranslateButton()
+  })
+  field.addEventListener('compositionend', () => {
+    composing = false
+    edit(side)
+  })
+}
+translateButton.addEventListener('click', requestTranslation)
+for (const select of [sourceLanguage, targetLanguage]) {
+  select.addEventListener('change', () => {
+    inputRevision += 1
+    outputField().value = ''
+    if (select === sourceLanguage) detectedLanguage = ''
+    requestTranslation()
+  })
+}
 
 copyButton.addEventListener('click', async () => {
   if (await window.floadeTranslation.copy(translation.value)) {
@@ -147,7 +179,7 @@ closeButton.addEventListener('click', () => window.floadeTranslation.close())
 window.addEventListener('keydown', event => {
   if (event.key === 'Enter' && (event.ctrlKey || event.metaKey) && !event.isComposing) {
     event.preventDefault()
-    void retranslate()
+    requestTranslation()
   }
   if (event.key === 'Escape') window.floadeTranslation.close()
 })
@@ -158,3 +190,4 @@ window.addEventListener('floade-locale-changed', () => {
   pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
   pinButton.setAttribute('aria-label', pinButton.title)
 })
+window.addEventListener('beforeunload', () => clearTimeout(debounceTimer))

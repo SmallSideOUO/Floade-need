@@ -19,13 +19,10 @@
       </header>
       <section class="content">
         <div class="language-row">
-          <select id="source-language" data-i18n-aria="translation.sourceLanguage">
+          <label class="language-field"><span data-i18n="translation.sourceLanguage">上方語言</span><select id="source-language">
             <option value="auto" data-i18n="translation.auto">自動偵測</option>
-          </select>
-          <button id="swap" type="button" data-i18n-title="translation.swap">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7h11l-3-3 1.4-1.4L22 8l-5.6 5.4L15 12l3-3H7V7Zm10 10H6l3 3-1.4 1.4L2 16l5.6-5.4L9 12l-3 3h11v2Z"/></svg>
-          </button>
-          <select id="target-language" data-i18n-aria="translation.targetLanguage"></select>
+          </select></label>
+          <label class="language-field"><span data-i18n="translation.targetLanguage">下方語言</span><select id="target-language"></select></label>
           <small id="confidence"></small>
         </div>
         <article class="source-card">
@@ -34,9 +31,9 @@
         </article>
         <article class="translation-card">
           <div class="section-title"><h2 data-i18n="translation.result">翻譯</h2><button id="copy" type="button" data-i18n="translation.copy">複製</button></div>
-          <textarea id="translation" class="text result" data-i18n-aria="translation.resultLabel" spellcheck="true"></textarea>
+          <textarea id="translation" class="text result" data-i18n-aria="translation.resultLabel" data-i18n-placeholder="translation.reversePlaceholder" spellcheck="true"></textarea>
         </article>
-        <div class="footer-row"><p id="provider" class="provider" data-i18n="translation.textProvider">Google 翻譯 · Ctrl+Enter 翻譯</p><p id="status" aria-live="polite"></p></div>
+        <div class="footer-row"><p id="provider" class="provider" data-i18n="translation.textProvider">Google 翻譯 · 上下皆可輸入，自動雙向翻譯</p><p id="status" aria-live="polite"></p></div>
       </section>
     </main>
     <script src="./i18n-renderer.js"></script>

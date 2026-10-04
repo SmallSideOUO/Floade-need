@@ -116,7 +116,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
   function openResult(data) {
     const window = new BrowserWindow({
       width: 560,
-      height: 400,
+      height: 440,
       icon: iconPath(),
       opacity: getOpacity(),
       minWidth: 390,
@@ -158,7 +158,7 @@ export function createScreenTranslator({ appPath, userDataPath, iconPath, getOpa
       textWindow.focus()
       return textWindow
     }
-    textWindow = openResult({ sourceText: '', translation: '', sourceLanguage: 'auto', targetLanguage: 'zh-TW' })
+    textWindow = openResult({ sourceText: '', translation: '', sourceLanguage: 'en', targetLanguage: 'zh-TW' })
     textWindow.on('closed', () => { textWindow = undefined })
     return textWindow
   }
