@@ -15,7 +15,8 @@ const voiceButtons = [...document.querySelectorAll('.voice-button')]
 let voiceSession
 let voiceSequence = 0
 
-const languageCodes = ['zh-TW', 'zh-CN', 'en', 'ja', 'ko', 'fr', 'de', 'es', 'pt', 'it', 'ru', 'vi', 'th', 'id']
+const languageCodes = window.floadeLanguages.codes
+const languageUsageKey = 'floade.translation.languageUsage.v1'
 const t = (key, variables) => window.floadeI18n.t(key, variables)
 
 let translating = false
@@ -35,22 +36,63 @@ function updateTranslateButton() {
   updateVoiceButtons()
 }
 
-function addLanguageOptions(select) {
-  for (const value of languageCodes) {
+function readLanguageUsage() {
+  try { return JSON.parse(localStorage.getItem(languageUsageKey)) || {} } catch { return {} }
+}
+
+function languageLabel(code, fallback = code) {
+  const label = t(`language.${code}`)
+  if (label !== `language.${code}`) return label
+  try { return new Intl.DisplayNames([window.floadeI18n.locale], { type: 'language' }).of(code) || fallback } catch { return fallback }
+}
+
+function renderLanguageOptions(select, groups) {
+  const selected = select.value
+  const extraOptions = [...select.options].filter(option => option.value !== 'auto' && !languageCodes.includes(option.value))
+  select.replaceChildren()
+  if (select === sourceLanguage) {
     const option = document.createElement('option')
-    option.value = value
-    option.dataset.languageCode = value
-    option.textContent = t(`language.${value}`)
+    option.value = 'auto'
+    option.dataset.i18n = 'translation.auto'
+    option.textContent = t('translation.auto')
     select.append(option)
   }
+  for (const [key, values] of Object.entries(groups)) {
+    const group = document.createElement('optgroup')
+    group.dataset.i18nGroup = `translation.${key}Languages`
+    group.label = t(group.dataset.i18nGroup)
+    for (const value of values) {
+      const option = document.createElement('option')
+      option.value = value
+      option.dataset.languageCode = value
+      option.textContent = languageLabel(value)
+      group.append(option)
+    }
+    if (key === 'other') group.append(...extraOptions)
+    select.append(group)
+  }
+  if ([...select.options].some(option => option.value === selected)) select.value = selected
+}
+
+function refreshLanguageOptions() {
+  const groups = window.floadeLanguages.rank(readLanguageUsage(), window.floadeI18n.locale)
+  renderLanguageOptions(sourceLanguage, groups)
+  renderLanguageOptions(targetLanguage, groups)
+}
+
+function rememberLanguages(languages) {
+  const usage = window.floadeLanguages.record(readLanguageUsage(), languages)
+  try { localStorage.setItem(languageUsageKey, JSON.stringify(usage)) } catch {}
+  refreshLanguageOptions()
 }
 
 function ensureLanguageOption(select, value, label = value) {
   if (!value || [...select.options].some(option => option.value === value)) return
   const option = document.createElement('option')
   option.value = value
-  option.textContent = label
-  select.append(option)
+  option.dataset.languageCode = value
+  option.textContent = languageLabel(value, label)
+  select.querySelector('optgroup:last-child').append(option)
 }
 
 function setBusy(value) {
@@ -125,8 +167,7 @@ function edit(side) {
   }
 }
 
-addLanguageOptions(sourceLanguage)
-addLanguageOptions(targetLanguage)
+refreshLanguageOptions()
 
 window.floadeTranslation.onData(data => {
   detectedLanguage = data.detectedLanguage || data.sourceLanguage || ''
@@ -140,6 +181,7 @@ window.floadeTranslation.onData(data => {
   provider.textContent = t(provider.dataset.i18n)
   translation.value = data.translation || ''
   source.value = data.sourceText || ''
+  if (source.value) rememberLanguages([sourceLanguage.value, targetLanguage.value])
   updateTranslateButton()
   if (!source.value) source.focus()
 })
@@ -171,6 +213,7 @@ swapButton.addEventListener('click', () => {
   ensureLanguageOption(targetLanguage, upperLanguage)
   sourceLanguage.value = lowerLanguage
   targetLanguage.value = upperLanguage
+  rememberLanguages([lowerLanguage, upperLanguage])
   const upperText = source.value
   source.value = translation.value
   translation.value = upperText
@@ -184,6 +227,7 @@ swapButton.addEventListener('click', () => {
 })
 for (const select of [sourceLanguage, targetLanguage]) {
   select.addEventListener('change', () => {
+    rememberLanguages([select.value])
     stopVoice()
     inputRevision += 1
     outputField().value = ''
@@ -216,14 +260,15 @@ window.addEventListener('keydown', event => {
   if (event.key === 'Escape') window.floadeTranslation.close()
 })
 window.addEventListener('floade-locale-changed', () => {
-  for (const option of document.querySelectorAll('[data-language-code]')) {
-    option.textContent = t(`language.${option.dataset.languageCode}`)
-  }
+  refreshLanguageOptions()
   pinButton.title = pinButton.classList.contains('active') ? t('common.unpin') : t('common.pin')
   pinButton.setAttribute('aria-label', pinButton.title)
   updateVoiceButtons()
 })
 window.addEventListener('beforeunload', () => clearTimeout(debounceTimer))
+window.addEventListener('storage', event => {
+  if (event.key === languageUsageKey) refreshLanguageOptions()
+})
 
 function updateVoiceButtons() {
   for (const button of voiceButtons) {
@@ -295,6 +340,7 @@ window.floadeTranslation.onVoice(data => {
         const language = languageCodes.includes(data.language) ? data.language : data.language.split('-')[0]
         ensureLanguageOption(sourceLanguage, language)
         sourceLanguage.value = language
+        rememberLanguages([language])
       }
       field.focus()
     }

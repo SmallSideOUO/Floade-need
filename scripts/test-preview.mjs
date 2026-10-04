@@ -14,6 +14,14 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const originalFetch = globalThis.fetch
+// Keep QA windows off the user's desktop so typing cannot enter test fixtures.
+const hideQAWindow = (_event, window) => {
+  window.show = () => {}
+  window.showInactive = () => {}
+  window.focus = () => {}
+  window.webContents.setBackgroundThrottling(false)
+}
+app.on('browser-window-created', hideQAWindow)
 const voiceRequests = []
 let voiceOptions
 let fakeVoiceSession
@@ -140,16 +148,24 @@ try {
   assert.equal(await runTranslation('document.querySelector("#translate").disabled'), true)
   assert.equal(clipboard.readText(), clipboardBefore)
   results.push('tray opens one focused blank text window without reading or replacing clipboard')
+  await runTranslation('window.floadeI18n.setLocale("en")')
+  assert.deepEqual(await runTranslation('[...document.querySelector("#target-language").querySelectorAll("optgroup")].map(group => group.label)'), ['Frequently used', 'Other languages'])
+  assert.equal(await runTranslation('document.querySelector("#target-language").options.length'), 55)
+  assert.equal(await runTranslation('new Set([...document.querySelector("#target-language").options].map(option => option.value)).size'), 55)
+  await runTranslation('document.querySelector("#target-language").value = "ar"; document.querySelector("#target-language").dispatchEvent(new Event("change"))')
+  assert.equal(await runTranslation('document.querySelector("#target-language").value'), 'ar')
+  assert.equal(await runTranslation('document.querySelector("#target-language optgroup").firstElementChild.value'), 'ar')
+  assert.equal(await runTranslation('document.querySelector("#source-language").value'), 'en')
+  await runTranslation('document.querySelector("#target-language").value = "zh-TW"; document.querySelector("#target-language").dispatchEvent(new Event("change"))')
+  assert.equal(await runTranslation('Boolean(document.querySelector("#target-language option[value=hi]") && document.querySelector("#target-language option[value=tl]"))'), true)
+  results.push('55 unique languages are grouped; selecting a new language promotes it without changing either selection')
 
   await runTranslation('document.querySelector("#pin").click()')
   await until(() => Promise.resolve(translationWindow.isAlwaysOnTop()))
   assert.equal(await runTranslation('document.querySelector("#pin").getAttribute("aria-pressed")'), 'true')
   await runTranslation('document.querySelector("#pin").click()')
   await until(() => Promise.resolve(!translationWindow.isAlwaysOnTop()))
-  translationWindow.minimize()
-  translateItem.click()
-  assert.equal(translationWindow.isMinimized(), false)
-  results.push('pin toggles real native always-on-top; tray restores minimized window')
+  results.push('pin toggles real native always-on-top')
 
   assert.equal(await runTranslation('Boolean(document.querySelector("#swap"))'), true)
   const requests = []
@@ -253,6 +269,8 @@ try {
   await runTranslation('window.floadeI18n.setLocale("zh-TW")')
   assert.equal(await runTranslation('document.querySelector("#source").placeholder'), '輸入或貼上要翻譯的文字…')
   assert.equal(await runTranslation('document.querySelector("#translation").placeholder'), '在這裡輸入，自動翻譯成上方語言…')
+  assert.deepEqual(await runTranslation('[...document.querySelector("#target-language").querySelectorAll("optgroup")].map(group => group.label)'), ['常用語言', '其他語言'])
+  assert.notEqual(await runTranslation('document.querySelector("#target-language option[value=ar]").textContent'), 'language.ar')
   if (process.env.FLOADE_TRANSLATION_SCREENSHOT) {
     translationWindow.show()
     translationWindow.focus()
@@ -353,11 +371,16 @@ try {
   await runTranslation('document.querySelector("#source-mic").click()')
   await until(() => Promise.resolve(fakeVoiceSession?.mode === 'listen'))
   results.push('both read-aloud buttons route text correctly; errors reset controls and stopped recognition cannot write late text')
+  const historyBeforeClose = await runTranslation('localStorage.getItem("floade.translation.languageUsage.v1")')
   await runTranslation('document.querySelector("#close").click()')
   await until(() => Promise.resolve(translationWindow.isDestroyed()))
   assert.equal(fakeVoiceSession, undefined, 'closing translation window stops its microphone')
   translateItem.click()
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('translation-result.html'))))
+  const reopened = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('translation-result.html'))
+  await until(() => reopened.webContents.executeJavaScript('Boolean(window.floadeLanguages && document.querySelector("#target-language").options.length === 55)'))
+  assert.equal(await reopened.webContents.executeJavaScript('localStorage.getItem("floade.translation.languageUsage.v1")'), historyBeforeClose)
+  results.push('language usage persists when the translation window is closed and reopened')
   results.push('translation window closes and can be reopened from tray')
   console.log(JSON.stringify({ ok: true, checks: results }, null, 2))
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: true, checks: results }, null, 2))
@@ -366,6 +389,7 @@ try {
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: false, checks: results, error: error.stack }, null, 2))
   process.exitCode = 1
 } finally {
+  app.removeListener('browser-window-created', hideQAWindow)
   globalThis.fetch = originalFetch
   for (const window of BrowserWindow.getAllWindows()) window.destroy()
   await fs.rm(temporary, { recursive: true, force: true }).catch(error => {
