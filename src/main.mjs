@@ -10,6 +10,7 @@ import { syncFolderToRepository } from './push-folder.mjs'
 import { normalizeLocale, translate } from './i18n-main.mjs'
 import { createMarkdownDocument } from './markdown-document.mjs'
 import { createLocalApi, attachControlSocket } from './local-api.mjs'
+import { createFloatingLauncher } from './floating-launcher.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -28,13 +29,19 @@ if (!app.requestSingleInstanceLock()) {
   let registeredShortcut
   let registeredTranslationShortcut
   let screenTranslator
+  let floatingLauncher
+  let recentDocuments = []
+  let documentIndex = { signature: '', updated: 0, documents: [] }
+  let documentScan
   let autoPushTimer
   let lastAutoPushDate = null
   let settings = {
     shortcut: null,
     translationShortcut: 'Alt+Shift+T',
     language: 'system',
-    opacity: 1
+    opacity: 1,
+    launcherVisible: true,
+    launcherPosition: null
   }
   const pushingFolders = new Set()
   const linkingFolders = new Set()
@@ -67,12 +74,18 @@ if (!app.requestSingleInstanceLock()) {
           : 'system',
         opacity: Number.isFinite(config.settings?.opacity)
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
-          : 1
+          : 1,
+        launcherVisible: config.settings?.launcherVisible !== false,
+        launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
+          ? { x: config.settings.launcherPosition.x, y: config.settings.launcherPosition.y } : null
       }
+      recentDocuments = Array.isArray(config.recentDocuments) ? config.recentDocuments.filter(document =>
+        typeof document?.folderPath === 'string' && typeof document?.relativePath === 'string' && Number.isFinite(document?.lastOpened)).slice(0, 30) : []
       lastAutoPushDate = typeof config.lastAutoPushDate === 'string' ? config.lastAutoPushDate : null
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1 }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null }
+      recentDocuments = []
       lastAutoPushDate = null
     }
   }
@@ -81,7 +94,7 @@ if (!app.requestSingleInstanceLock()) {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
     const temporary = `${configFile}.tmp`
     try {
-      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate }, null, 2)}\n`, 'utf8')
+      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate, recentDocuments }, null, 2)}\n`, 'utf8')
       fs.renameSync(temporary, configFile)
     } catch (error) {
       try { fs.unlinkSync(temporary) } catch {}
@@ -222,6 +235,11 @@ if (!app.requestSingleInstanceLock()) {
   async function openMarkdownPreview(folderPath, relativePath) {
     const filePath = markdownPath(folderPath, relativePath)
     if (!filePath || !fs.existsSync(filePath)) return
+    if (folders.some(folder => folder.path === folderPath)) {
+      recentDocuments = [{ folderPath, relativePath, lastOpened: Date.now() }, ...recentDocuments.filter(document =>
+        document.folderPath !== folderPath || document.relativePath !== relativePath)].slice(0, 30)
+      saveFolders()
+    }
 
     const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
     const existingWindow = previewWindows.get(key)
@@ -408,8 +426,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function openFloadeMenu() {
-    refreshTrayMenu()
-    tray?.popUpContextMenu()
+    void floatingLauncher?.showPanel(true)
   }
 
   function setGlobalShortcut(shortcut) {
@@ -744,73 +761,63 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function buildTrayMenu() {
-    const pushItems = []
-    const folderItems = folders.length > 0
-      ? folders.map(folder => {
-          const submenu = Menu.buildFromTemplate([
-            {
-              label: tr('menu.preview'),
-              click: () => showPreviewPicker(folder)
-            },
-            {
-              label: pushingFolders.has(folder.path) ? tr('menu.pushing') : tr('menu.push'),
-              enabled: hasPushableChanges(folder),
-              click: () => pushFolder(folder)
-            },
-            { type: 'separator' },
-            {
-              label: tr('menu.delete'),
-              click: () => removeFolder(folder)
-            }
-          ])
-          pushItems.push({ folder, pushItem: submenu.items[1] })
-
-          return {
-            label: folder.path,
-            submenu
-          }
-        })
-      : [{ label: tr('menu.noFolders'), enabled: false }]
-
-    const menu = Menu.buildFromTemplate([
-      {
-        label: tr('menu.addFolder'),
-        click: addFolder
-      },
-      { type: 'separator' },
-      ...folderItems,
-      { type: 'separator' },
-      {
-        label: tr('menu.textTranslate'),
-        click: () => screenTranslator?.openTextWindow()
-      },
-      {
-        label: tr('menu.screenTranslate'),
-        click: () => screenTranslator?.start()
-      },
-      {
-        label: tr('menu.settings'),
-        click: showSettings
-      },
-      { type: 'separator' },
-      {
-        label: tr('menu.quit'),
-        click: () => app.quit()
-      }
+    return Menu.buildFromTemplate([
+      { label: tr('menu.settings'), click: showSettings },
+      { label: tr(floatingLauncher?.isVisible() !== false ? 'menu.hideBall' : 'menu.showBall'), click: () => floatingLauncher?.setVisible(!floatingLauncher.isVisible()) }
     ])
-
-    menu.on('menu-will-show', () => {
-      for (const { folder, pushItem } of pushItems) {
-        pushItem.label = pushingFolders.has(folder.path) ? tr('menu.pushing') : tr('menu.push')
-        pushItem.enabled = hasPushableChanges(folder)
-      }
-    })
-
-    return menu
   }
-
   function refreshTrayMenu() {
     tray?.setContextMenu(buildTrayMenu())
+    void floatingLauncher?.refreshData()
+  }
+
+  function readLauncherData() {
+    const signature = JSON.stringify(folders.map(folder => folder.path).sort())
+    if (!documentScan && (documentIndex.signature !== signature || Date.now() - documentIndex.updated > 30000)) {
+      documentScan = Promise.all(folders.map(async folder => {
+        try {
+          const files = await findMarkdownFiles(folder.path)
+          return files.map(relativePath => ({ folderPath: folder.path, folderName: path.basename(folder.path) || folder.path, relativePath, name: path.basename(relativePath) }))
+        } catch { return [] }
+      })).then(groups => {
+        documentIndex = { signature, updated: Date.now(), documents: groups.flat() }
+      }).finally(() => { documentScan = undefined; void floatingLauncher?.refreshData() })
+    }
+    return {
+      folders: folders.map(folder => ({ ...folder, name: path.basename(folder.path) || folder.path,
+        exists: fs.existsSync(folder.path), pushing: pushingFolders.has(folder.path),
+        busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path), canPush: hasPushableChanges(folder) })),
+      documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath))
+        .map(document => ({ ...document, lastOpened: recentDocuments.find(recent => recent.folderPath === document.folderPath && recent.relativePath === document.relativePath)?.lastOpened || 0 })),
+      indexing: Boolean(documentScan)
+    }
+  }
+
+  async function openLauncherDocument(document) {
+    if (typeof document?.folderPath !== 'string' || typeof document?.relativePath !== 'string') return false
+    const folder = folders.find(folder => folder.path === document.folderPath)
+    if (!folder || !documentIndex.documents.some(file => file.folderPath === folder.path && file.relativePath === document.relativePath)) return false
+    const filePath = markdownPath(folder.path, document.relativePath)
+    if (!filePath || !fs.existsSync(filePath)) return false
+    await openMarkdownPreview(folder.path, document.relativePath)
+    return true
+  }
+
+  async function launcherAction(name, folderPath) {
+    if (name === 'add-folder') return addFolder()
+    if (name === 'text-translate') return screenTranslator?.openTextWindow()
+    if (name === 'screen-translate') return screenTranslator?.start()
+    if (name === 'settings') return showSettings()
+    if (name === 'quit') return app.quit()
+    const folder = folders.find(folder => folder.path === folderPath)
+    if (!folder) throw new Error(tr('folder.missing'))
+    if (name === 'preview') return showPreviewPicker(folder)
+    if (name === 'push') { if (!(await pushFolder(folder))) throw new Error(tr('push.failed')); return }
+    if (name === 'remove') {
+      if (pushingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
+      return removeFolder(folder)
+    }
+    throw new Error('Unknown Floade action')
   }
 
   app.on('window-all-closed', () => {})
@@ -856,6 +863,14 @@ if (!app.requestSingleInstanceLock()) {
 
     tray = new Tray(icon)
     tray.setToolTip('Floade')
+    floatingLauncher = createFloatingLauncher({
+      appPath: app.getAppPath(), iconPath: windowIconPath, getLocale: effectiveLocale, getOpacity: () => settings.opacity,
+      getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition }),
+      readData: readLauncherData, openDocument: openLauncherDocument, action: launcherAction,
+      saveVisible: visible => { settings.launcherVisible = visible; saveFolders() },
+      savePosition: position => { settings.launcherPosition = position; saveFolders() },
+      onVisibilityChange: refreshTrayMenu
+    })
     refreshTrayMenu()
     if (process.platform === 'win32' && app.isPackaged) {
       app.setLoginItemSettings({ openAtLogin: true })
@@ -876,6 +891,7 @@ if (!app.requestSingleInstanceLock()) {
     clearInterval(autoPushTimer)
     globalShortcut.unregisterAll()
     void screenTranslator?.dispose()
+    floatingLauncher?.dispose()
     controlServer?.close()
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
       fs.unlinkSync(controlSocket)

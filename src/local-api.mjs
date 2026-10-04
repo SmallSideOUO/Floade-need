@@ -41,7 +41,7 @@ export function createLocalApi({ getFolders, command, saveLink, refresh, busyFol
     const { path: folderPath, repo, replace = false } = params
     if (typeof folderPath !== 'string' || !path.isAbsolute(folderPath) || typeof repo !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9-]*\/[A-Za-z0-9_.-]+$/.test(repo) || typeof replace !== 'boolean') fail('INVALID_PARAMS', 'Provide an absolute path, owner/repo, and an optional boolean replace.')
     const folder = findFolder(folderPath)
-    if (!folder) fail('FOLDER_NOT_FOUND', 'Add this folder through the Floade tray menu first.')
+    if (!folder) fail('FOLDER_NOT_FOUND', 'Add this folder from the floating Floade panel first.')
     try { if (!fs.statSync(folder.path).isDirectory()) fail('FOLDER_UNAVAILABLE', 'The registered path is not a directory.') } catch { fail('FOLDER_UNAVAILABLE', 'The folder does not exist or cannot be accessed.') }
     if (isBusy(folder.path)) fail('FOLDER_BUSY', 'This folder has an operation in progress; retry when it finishes.')
     busyFolders.add(folder.path)

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Floade</title>
+    <link rel="stylesheet" href="./floating-launcher.css">
+  </head>
+  <body>
+    <button id="ball" type="button" data-i18n-aria="launcher.open"><span class="light"></span></button>
+    <main id="panel" hidden>
+      <header><span class="panel-brand"><i></i>Floade</span><div><button id="settings" class="quiet" type="button" data-i18n="settings.heading">設定</button><button id="close" class="quiet" type="button" data-i18n-title="common.close">×</button></div></header>
+      <div class="quick-actions">
+        <button id="add-folder" type="button"><span aria-hidden="true">＋</span><small data-i18n="launcher.addFolder">新增資料夾</small></button>
+        <button id="text-translate" type="button"><span aria-hidden="true">文</span><small data-i18n="launcher.translate">文字翻譯</small></button>
+        <button id="screen-translate" type="button"><span aria-hidden="true">⌗</span><small data-i18n="launcher.screenTranslate">框選翻譯</small></button>
+      </div>
+      <div class="search-row"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-5-5m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg><input id="search" type="search" autocomplete="off" data-i18n-placeholder="launcher.search" data-i18n-aria="launcher.search"></div>
+      <div class="list-heading"><span id="list-heading" data-i18n="launcher.folders">資料夾</span><small id="document-count"></small></div>
+      <div id="items"><div id="folders"></div><div id="documents"></div></div>
+      <p id="status" aria-live="polite" data-i18n="launcher.loading">正在讀取文件…</p>
+      <details id="recent-section" hidden><summary><span data-i18n="launcher.recent">最近文件</span></summary><div id="recent-documents"></div></details>
+      <footer><span data-i18n="launcher.dragHint">拖曳小球可移動位置</span><button id="quit" class="quiet" type="button" data-i18n="launcher.quit">退出</button></footer>
+    </main>
+    <script src="./i18n-renderer.js"></script>
+    <script src="./floating-launcher.js"></script>
+  </body>
+</html>

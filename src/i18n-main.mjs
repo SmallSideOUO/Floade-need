@@ -1,5 +1,6 @@
 const messages = {
   en: {
+    'menu.showBall': 'Show floating ball', 'menu.hideBall': 'Hide floating ball', 'launcher.busy': 'This folder is busy. Try again when its operation finishes.',
     'preview.failed': 'Preview failed',
     'folder.missing': 'This folder could not be found.',
     'markdown.reading': 'Reading Markdown',
@@ -57,6 +58,7 @@ const messages = {
     'language.ru': 'Russian'
   },
   'zh-TW': {
+    'menu.showBall': '顯示小球', 'menu.hideBall': '隱藏小球', 'launcher.busy': '資料夾正在處理中，完成後再試。',
     'preview.failed': '預覽失敗',
     'folder.missing': '找不到這個資料夾。',
     'markdown.reading': '讀取 Markdown',

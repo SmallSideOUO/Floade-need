@@ -4,7 +4,7 @@
 
 Floade is a tiny system-tray app that links local folders to private GitHub repositories and pushes every local change in one click.
 
-It has no main window. Launch it from the Windows Start menu or run `floade`, then use the tray menu to add folders, preview files, push changes, or quit. AI tools link repositories through the local API.
+Launch it from the Windows Start menu or run `floade`. A small black floating ball with a breathing white light opens the Floade panel on hover. The tray menu contains only Settings and Show/Hide floating ball. AI tools link repositories through the local API.
 
 ## Why I built Floade
 
@@ -24,7 +24,9 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 
 ## Features
 
-- Runs quietly in the system tray
+- Provides a draggable transparent floating ball with a breathing white center; position and visibility are remembered locally
+- Opens a compact hover panel with Add folder, translation tools, and folder cards for Preview, Push, and Delete; the panel stays open when the pointer moves into it and closes after leaving
+- Searches Markdown files across added folders and records recently opened documents; the global shortcut focuses search, Enter opens the selected document, and Esc closes the panel
 - Adds existing local folders through the native folder picker
 - Opens one or more local Markdown files in editable desktop windows
 - Supports always-on-top controls in both the Markdown picker and document windows
@@ -33,7 +35,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Lets translation windows change languages, swap both texts and their languages, and edit either text box
 - Offers 55 common translation languages, grouped into frequent and other languages; selection frequency and recent use rank the frequent group, with history kept locally
 - Shows additional translations below the primary result: expand Japanese, Spanish, or other languages together; expanded results update from the last edited text and can each be copied
-- Opens a pinnable **Text translation** window from the tray menu; type in either box for automatic translation in both directions; **Translate** or `Ctrl+Enter` translates immediately
+- Opens a pinnable **Text translation** window from the floating panel; type in either box for automatic translation in both directions; **Translate** or `Ctrl+Enter` translates immediately
 - Provides microphone and read-aloud buttons in both text boxes; speech input translates automatically, and clicking the active button again stops voice
 - Provides English and Traditional Chinese interfaces with system-language detection and a manual override
 - Applies one configurable opacity level to every Floade window
@@ -99,17 +101,19 @@ If another package already provides a global `floade` command, uninstall or rena
 
 ## Usage
 
-Right-click the Floade tray icon:
+Hover over the floating ball, or click it to focus the panel:
 
-1. Select **Add folder** (`新增資料夾`) and choose an existing local folder.
+1. Select **Add folder** (`新增資料夾`) at the top of the panel and choose an existing local folder.
 2. Ask your local AI assistant to link the folder to your private GitHub repository using the [Floade local API](docs/local-api.md). Existing links are preserved. First-time GitHub access uses `gh auth login --hostname github.com --web`.
-3. Select **Push** from the folder submenu.
+3. Select **Push** on its folder card.
 
-Select **Preview** (`預覽`) from a folder submenu to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
+The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Search in the panel to open a document directly; recently opened documents are available in the expandable section below. Use **Quit** at the bottom of the panel or `floade stop` to exit.
+
+Select **Preview** (`預覽`) on a folder card to choose one or more `.md` files. For a linked folder with a clean Git working tree, Floade first checks the linked repository for updates; an empty folder is cloned automatically. Every selected file opens in its own editable window and is saved back to the original local file automatically. Use the pin button to keep either the picker or a Markdown window on top.
 
 Open Markdown windows reload external file changes automatically. If the editor also has unsaved changes, Floade keeps the draft and blocks saving until you copy your edits and confirm **Reload from disk**.
 
-Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the Floade menu and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the interface language and the opacity of all Floade windows from 40% to 100%. Floade follows the operating-system language by default and falls back to English for unsupported languages.
+Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the floating panel and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the interface language and the opacity of all Floade windows from 40% to 100%. Floade follows the operating-system language by default and falls back to English for unsupported languages.
 
 `Push` runs the equivalent of:
 

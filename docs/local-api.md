@@ -1,6 +1,6 @@
 # Floade local API
 
-Use this API to link a folder already added through the tray menu to an existing private GitHub repository. Floade saves the link and refreshes the tray. The user continues to use Preview, Push, and Delete as usual. Linking does not create repositories, commit files, or push them.
+Use this API to link a folder already added through the floating panel to an existing private GitHub repository. Floade saves the link and refreshes the tray. The user continues to use Preview, Push, and Delete as usual. Linking does not create repositories, commit files, or push them.
 
 ## Windows installer
 
@@ -36,7 +36,7 @@ Clients print one JSON response; success exits with code 0, failure with code 1.
 4. Call `folders.link` with the absolute path and `owner/repo`.
 5. Inspect `ok`, then confirm the saved link with `folders.list`.
 
-The same link can be requested again safely (`changed=false`). To intentionally replace a different existing link, use `-Replace` in PowerShell or `--replace` in the CLI. An unlinked folder's Push stays disabled until it has a link and changes to push. The Link menu and repository picker have been removed.
+The same link can be requested again safely (`changed=false`). To intentionally replace a different existing link, use `-Replace` in PowerShell or `--replace` in the CLI. An unlinked folder's Push stays disabled until it has a link and changes to push. The Link menu and repository picker have been removed. Preview, Push, and Delete are in the floating panel; the tray contains only Settings and Show/Hide floating ball.
 
 Example success:
 

@@ -1,6 +1,6 @@
 {
   "name": "floade-local-data",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "private": true,
   "type": "module",
   "description": "Link local folders to private GitHub repositories and push from the system tray.",
@@ -30,7 +30,7 @@
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis",
     "screenshots": "electron scripts/capture-screenshots.mjs",
-    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/markdown-document.mjs && node --check src/push-folder.mjs && node --check src/git-identity.mjs && node --check src/i18n-main.mjs && node --check src/i18n-renderer.js && node --check src/screen-translator.mjs && node --check src/capture-overlay.js && node --check src/capture-overlay-preload.cjs && node --check src/translation-result.js && node --check src/translation-result-preload.cjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js && node --check src/preview-picker.js && node --check src/preview-picker-preload.cjs && node --check src/markdown-preview.js && node --check src/markdown-preview-preload.cjs && node --check src/settings.js && node --check src/settings-preload.cjs && node --check scripts/capture-screenshots.mjs && node --check scripts/screenshot-preload.cjs && node --check scripts/test-preview.cjs && node --check scripts/test-preview.mjs && node --check src/voice-service.mjs && node --check src/translation-languages.js && node --check src/translation-extras.js && node --check src/local-api.mjs && node --check src/local-api-client.mjs"
+    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/markdown-document.mjs && node --check src/push-folder.mjs && node --check src/git-identity.mjs && node --check src/i18n-main.mjs && node --check src/i18n-renderer.js && node --check src/screen-translator.mjs && node --check src/capture-overlay.js && node --check src/capture-overlay-preload.cjs && node --check src/translation-result.js && node --check src/translation-result-preload.cjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js && node --check src/preview-picker.js && node --check src/preview-picker-preload.cjs && node --check src/markdown-preview.js && node --check src/markdown-preview-preload.cjs && node --check src/settings.js && node --check src/settings-preload.cjs && node --check scripts/capture-screenshots.mjs && node --check scripts/screenshot-preload.cjs && node --check scripts/test-preview.cjs && node --check scripts/test-preview.mjs && node --check src/voice-service.mjs && node --check src/translation-languages.js && node --check src/translation-extras.js && node --check src/local-api.mjs && node --check src/local-api-client.mjs && node --check src/floating-launcher.mjs && node --check src/floating-launcher.js && node --check src/floating-launcher-preload.cjs && node --check src/launcher-layout.mjs"
   },
   "dependencies": {
     "electron-runtime": "npm:electron@^43.3.0",

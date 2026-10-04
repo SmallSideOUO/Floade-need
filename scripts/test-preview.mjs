@@ -16,16 +16,18 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const originalFetch = globalThis.fetch
-globalThis.previewApiFolder = path.join(temporary, 'api-folder')
+globalThis.previewApiFolder = path.join(temporary, 'Notes')
 await fs.mkdir(globalThis.previewApiFolder)
 await fs.writeFile(path.join(globalThis.previewApiFolder, 'note.md'), 'API fixture\n')
 globalThis.previewGithubCommand = async (_program, args) => ({ stdout: args[0] === 'auth' ? '' : JSON.stringify(args[1] === 'list'
-  ? [{ nameWithOwner: 'fixture/data', isPrivate: true, viewerPermission: 'WRITE' }]
-  : { nameWithOwner: 'fixture/data', isPrivate: true, viewerPermission: 'WRITE' }) })
+  ? [{ nameWithOwner: 'demo/notes', isPrivate: true, viewerPermission: 'WRITE' }]
+  : { nameWithOwner: 'demo/notes', isPrivate: true, viewerPermission: 'WRITE' }) })
 // Keep QA windows off the user's desktop so typing cannot enter test fixtures.
 const hideQAWindow = (_event, window) => {
-  window.show = () => {}
-  window.showInactive = () => {}
+  window.show = () => { window.__qaShown = true }
+  window.showInactive = () => { window.__qaShown = true }
+  const nativeHide = window.hide.bind(window)
+  window.hide = () => { window.__qaShown = false; nativeHide() }
   window.focus = () => {}
   window.webContents.setBackgroundThrottling(false)
 }
@@ -62,9 +64,12 @@ const realApiCommand = 'command: (program, args) => execFileAsync(program, args,
 assert.ok(source.includes(realApiCommand))
 source = source.replace(realApiCommand, 'command: globalThis.previewGithubCommand')
 source = source.replace('    screenTranslator = createScreenTranslator({', '    screenTranslator = createScreenTranslator({ voiceFactory: globalThis.previewVoiceFactory,')
+source = source.replace('    floatingLauncher = createFloatingLauncher({', '    floatingLauncher = createFloatingLauncher({ cursor: () => globalThis.previewCursor || screen.getCursorScreenPoint(),')
+source = source.replace('    runDailyPush()', '    // Daily remote pushes disabled in QA')
+source = source.replace('    autoPushTimer = setInterval(runDailyPush, 60 * 1000)', '    // Daily timer disabled in QA')
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (false)')
 source = source.replace('  app.whenReady().then(() => {',
-  '  globalThis.previewQA = { openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu }\n  app.whenReady().then(() => {')
+  '  globalThis.previewQA = { openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
 const instrumented = path.join(temporary, 'main.mjs')
 await fs.writeFile(instrumented, source)
 
@@ -74,11 +79,12 @@ try {
   await wait(100)
   const apiSocket = process.platform === 'win32' ? `\\\\.\\pipe\\floade-preview-qa-${process.pid}` : path.join(os.tmpdir(), `floade-preview-qa-${process.pid}.sock`)
   const apiCall = (method, params = {}) => requestLocalApi({ method, params }, { socketPath: apiSocket })
-  const folderMenu = () => previewQA.buildTrayMenu().items.find(item => item.label === globalThis.previewApiFolder).submenu
-  assert.equal(folderMenu().items.some(item => /Link|連結/.test(item.label)), false)
-  assert.equal(folderMenu().items[1].enabled, false, 'an unlinked folder cannot push')
+  const folderState = () => previewQA.readLauncherData().folders.find(folder => folder.path === globalThis.previewApiFolder)
+  assert.equal(previewQA.buildTrayMenu().items.length, 2)
+  assert.equal(previewQA.buildTrayMenu().items.some(item => /Link|連結/.test(item.label)), false)
+  assert.equal(folderState().canPush, false, 'an unlinked folder cannot push')
   assert.deepEqual((await apiCall('folders.list')).result.folders, [{ path: globalThis.previewApiFolder, repo: null, exists: true, busy: false }])
-  assert.equal((await apiCall('repositories.list')).result.repositories[0].repo, 'fixture/data')
+  assert.equal((await apiCall('repositories.list')).result.repositories[0].repo, 'demo/notes')
   const qaConfigPath = path.join(temporary, 'profile', 'folders.json')
   const baselineConfig = JSON.stringify({ folders: [{ path: globalThis.previewApiFolder, repo: null }], settings: { language: 'system', opacity: 1 } })
   await fs.writeFile(qaConfigPath, baselineConfig)
@@ -88,26 +94,86 @@ try {
     return originalRename(from, to)
   }
   try {
-    assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })).ok, false)
+    assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'demo/notes' })).ok, false)
     assert.equal((await apiCall('folders.list')).result.folders[0].repo, null)
     assert.equal(await fs.readFile(qaConfigPath, 'utf8'), baselineConfig)
     assert.equal(syncFs.existsSync(`${qaConfigPath}.tmp`), false)
   } finally { syncFs.renameSync = originalRename }
   results.push('failed configuration replacement preserves the existing file and rolls back the in-memory link')
-  const linked = await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })
+  const linked = await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'demo/notes' })
   assert.equal(linked.ok, true)
   assert.equal(linked.result.changed, true)
   const configAfterLink = JSON.parse(await fs.readFile(path.join(temporary, 'profile', 'folders.json'), 'utf8'))
-  assert.deepEqual(configAfterLink.folders, [{ path: globalThis.previewApiFolder, repo: 'fixture/data' }])
-  assert.equal(folderMenu().items[1].enabled, true, 'link immediately enables the existing Push for pending files')
-  const folderLabels = folderMenu().items.filter(item => item.type !== 'separator').map(item => item.label)
-  assert.equal(folderLabels.length, 3)
-  assert.ok(['Preview', '預覽'].includes(folderLabels[0]))
-  assert.equal(folderLabels[1], 'Push')
-  assert.ok(['Delete', '刪除'].includes(folderLabels[2]))
-  assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'fixture/data' })).result.changed, false)
-  assert.equal((await apiCall('folders.list')).result.folders[0].repo, 'fixture/data')
+  assert.deepEqual(configAfterLink.folders, [{ path: globalThis.previewApiFolder, repo: 'demo/notes' }])
+  assert.equal(folderState().canPush, true, 'link immediately enables the existing Push for pending files')
+  assert.equal((await apiCall('folders.link', { path: globalThis.previewApiFolder, repo: 'demo/notes' })).result.changed, false)
+  assert.equal((await apiCall('folders.list')).result.folders[0].repo, 'demo/notes')
   results.push('Link is absent from the tray; the real local API saves a verified link and immediately enables the existing Push')
+  const launcher = previewQA.getLauncher()
+  const runBall = code => launcher.ball.webContents.executeJavaScript(code)
+  const runPanel = code => launcher.panel.webContents.executeJavaScript(code)
+  await until(() => runBall('Boolean(window.floadeLauncher)'))
+  assert.equal(launcher.ball.isAlwaysOnTop(), true)
+  assert.equal(await runBall('getComputedStyle(document.body).backgroundColor'), 'rgba(0, 0, 0, 0)')
+  assert.equal(await runBall('getComputedStyle(document.querySelector(".light")).animationName'), 'breathe')
+  const originalBall = launcher.ball.getBounds()
+  globalThis.previewCursor = { x: originalBall.x + 26, y: originalBall.y + 26 }
+  await runBall('window.floadeLauncher.drag("start")')
+  globalThis.previewCursor = { x: originalBall.x - 34, y: originalBall.y - 14 }
+  await runBall('window.floadeLauncher.drag("move")')
+  await runBall('window.floadeLauncher.drag("end")')
+  const movedBall = launcher.ball.getBounds()
+  assert.deepEqual([movedBall.x, movedBall.y], [originalBall.x - 60, originalBall.y - 40])
+  assert.deepEqual(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.launcherPosition, { x: movedBall.x, y: movedBall.y })
+  assert.notEqual(launcher.panel.__qaShown, true, 'dragging does not open the panel')
+  globalThis.previewCursor = { x: movedBall.x + 26, y: movedBall.y + 26 }
+  await runBall('window.floadeLauncher.hover(true)')
+  await until(() => Promise.resolve(launcher.panel.__qaShown === true))
+  await until(() => runPanel('document.querySelectorAll(".folder").length === 1'))
+  assert.equal(await runPanel('document.querySelector("[data-action=push]").disabled'), false)
+  assert.equal(await runPanel('Boolean(document.querySelector("[data-action=preview]") && document.querySelector("[data-action=remove]") && document.querySelector("#add-folder") && document.querySelector("#text-translate") && document.querySelector("#screen-translate"))'), true)
+  await runBall('window.floadeLauncher.hover(false)')
+  await runPanel('window.floadeLauncher.hover(true)')
+  await wait(450)
+  assert.equal(launcher.panel.__qaShown, true)
+  globalThis.previewCursor = { x: movedBall.x - 900, y: movedBall.y - 900 }
+  await runPanel('window.floadeLauncher.hover(false)')
+  await until(() => Promise.resolve(launcher.panel.__qaShown === false))
+  results.push('transparent breathing ball stays on top; drag saves position; hover preserves the panel during pointer transfer and closes after leaving')
+  previewQA.buildTrayMenu().items[1].click()
+  assert.equal(launcher.isVisible(), false)
+  assert.ok(['Show floating ball', '顯示小球'].includes(previewQA.buildTrayMenu().items[1].label))
+  assert.equal(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.launcherVisible, false)
+  previewQA.buildTrayMenu().items[1].click()
+  assert.equal(launcher.isVisible(), true)
+  previewQA.openFloadeMenu()
+  await until(() => runPanel('document.activeElement.id === "search"'))
+  await until(() => runPanel('document.querySelector("#status").textContent === ""'))
+  if (process.env.FLOADE_LAUNCHER_SCREENSHOT) {
+    await runPanel('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    await fs.writeFile(process.env.FLOADE_LAUNCHER_SCREENSHOT, (await launcher.panel.webContents.capturePage()).toPNG())
+    const ballImage = await launcher.ball.webContents.capturePage()
+    assert.equal(ballImage.toBitmap()[3], 0, 'the ball window has transparent corners')
+    await fs.writeFile(process.env.FLOADE_LAUNCHER_SCREENSHOT.replace('.png', '-ball.png'), ballImage.toPNG())
+  }
+  await runPanel('document.querySelector("#search").value = "note"; document.querySelector("#search").dispatchEvent(new Event("input"))')
+  await until(() => runPanel('document.querySelectorAll("#documents .document").length === 1'))
+  await runPanel('document.querySelector("#search").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }))')
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 1))
+  assert.equal(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).recentDocuments[0].relativePath, 'note.md')
+  const launcherDocumentWindow = [...previewQA.previewWindows.values()][0]
+  await until(() => launcherDocumentWindow.webContents.executeJavaScript('Boolean(window.floadePreview && document.querySelector("#editor").value === "API fixture\\n")'))
+  launcherDocumentWindow.destroy()
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 0))
+  await launcher.showPanel(true)
+  await until(() => runPanel('document.querySelector("#recent-documents .document") !== null'))
+  await runPanel('window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }))')
+  assert.equal(launcher.panel.__qaShown, false)
+  await launcher.showPanel(true)
+  launcher.panel.close()
+  assert.equal(launcher.panel.isDestroyed(), false, 'native close hides the panel so it can still be reopened')
+  assert.equal(launcher.panel.__qaShown, false)
+  results.push('tray has exactly Settings and ball visibility; shortcut focuses search, Enter opens a document and persists recents, and Escape closes the panel')
   const file = path.join(temporary, 'sample.md')
   await fs.writeFile(file, 'original\n')
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
@@ -181,9 +247,7 @@ try {
   results.push('closing window disposes document polling')
 
   const clipboardBefore = clipboard.readText()
-  const menu = previewQA.buildTrayMenu()
-  const translateItem = menu.items.find(item => ['Text translation', '文字翻譯'].includes(item.label))
-  assert.ok(translateItem, 'tray offers text translation')
+  const translateItem = { click: () => runPanel('window.floadeLauncher.action("text-translate")') }
   translateItem.click()
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('translation-result.html'))))
   const translationWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('translation-result.html'))
@@ -194,7 +258,7 @@ try {
   assert.equal(await runTranslation('document.querySelector("#confidence").hidden'), true)
   assert.equal(await runTranslation('document.querySelector("#translate").disabled'), true)
   assert.equal(clipboard.readText(), clipboardBefore)
-  results.push('tray opens one focused blank text window without reading or replacing clipboard')
+  results.push('floating panel opens one focused blank text window without reading or replacing clipboard')
   await runTranslation('window.floadeI18n.setLocale("en")')
   assert.deepEqual(await runTranslation('[...document.querySelector("#target-language").querySelectorAll("optgroup")].map(group => group.label)'), ['Frequently used', 'Other languages'])
   assert.equal(await runTranslation('document.querySelector("#target-language").options.length'), 55)
@@ -513,7 +577,7 @@ try {
   await until(() => reopened.webContents.executeJavaScript('Boolean(window.floadeLanguages && document.querySelector("#target-language").options.length === 55)'))
   assert.equal(await reopened.webContents.executeJavaScript('localStorage.getItem("floade.translation.languageUsage.v1")'), historyBeforeClose)
   results.push('language usage persists when the translation window is closed and reopened')
-  results.push('translation window closes and can be reopened from tray')
+  results.push('translation window closes and can be reopened from the floating panel')
   console.log(JSON.stringify({ ok: true, checks: results }, null, 2))
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: true, checks: results }, null, 2))
 } catch (error) {
@@ -521,6 +585,7 @@ try {
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: false, checks: results, error: error.stack }, null, 2))
   process.exitCode = 1
 } finally {
+  globalThis.previewQA?.getLauncher()?.dispose()
   app.removeListener('browser-window-created', hideQAWindow)
   globalThis.fetch = originalFetch
   for (const window of BrowserWindow.getAllWindows()) window.destroy()
