@@ -2,6 +2,7 @@ const opacityInput = document.querySelector('#opacity')
 const opacityValue = document.querySelector('#opacity-value')
 const languageSelect = document.querySelector('#language')
 const closeButton = document.querySelector('#close')
+const startupInput = document.querySelector('#start-at-login')
 const modifierKeys = new Set(['CommandOrControl', 'Command', 'Alt', 'Shift'])
 const t = (key, variables) => window.floadeI18n.t(key, variables)
 
@@ -156,6 +157,7 @@ window.floadeSettings.onState(state => {
   recorders[1].current = state.translationShortcut
   opacityInput.value = String(Math.round(state.opacity * 100))
   languageSelect.value = state.language || 'system'
+  startupInput.checked = state.startAtLogin !== false
   updateOpacityDisplay()
   renderAll()
 })
@@ -226,3 +228,12 @@ languageSelect.addEventListener('change', async () => {
 })
 window.addEventListener('floade-locale-changed', renderAll)
 closeButton.addEventListener('click', () => window.floadeSettings.close())
+startupInput.addEventListener('change', async () => {
+  startupInput.disabled = true
+  const result = await window.floadeSettings.setStartAtLogin(startupInput.checked)
+  startupInput.checked = Boolean(result.enabled)
+  startupInput.disabled = false
+  const status = document.querySelector('#startup-status')
+  status.textContent = result.success ? t('settings.startupSaved') : result.message || t('settings.startupFailed')
+  status.className = `status ${result.success ? 'success' : 'error'}`
+})

@@ -169,6 +169,8 @@ header {
 
 .status.error { color: #ef806e; }
 .status.success { color: #69cc98; }
+.startup-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; cursor: pointer; }
+#start-at-login { flex: 0 0 auto; width: 18px; height: 18px; accent-color: #78aef8; cursor: pointer; }
 
 .setting-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
 #opacity-value { flex: 0 0 auto; color: #78aef8; font-size: 14px; font-variant-numeric: tabular-nums; }

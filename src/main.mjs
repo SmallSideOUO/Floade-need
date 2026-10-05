@@ -1,10 +1,11 @@
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, screen, shell, Tray, nativeImage } from 'electron'
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import { promisify } from 'node:util'
+import { pathToFileURL, fileURLToPath } from 'node:url'
 import { createScreenTranslator } from './screen-translator.mjs'
 import { syncFolderToRepository } from './push-folder.mjs'
 import { normalizeLocale, translate } from './i18n-main.mjs'
@@ -12,6 +13,7 @@ import { createMarkdownDocument } from './markdown-document.mjs'
 import { createLocalApi, attachControlSocket } from './local-api.mjs'
 import { createFloatingLauncher } from './floating-launcher.mjs'
 import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './launcher-files.mjs'
+import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -42,6 +44,7 @@ if (!app.requestSingleInstanceLock()) {
     language: 'system',
     opacity: 1,
     launcherVisible: true,
+    startAtLogin: true,
     launcherSize: null,
     launcherPosition: null
   }
@@ -50,6 +53,7 @@ if (!app.requestSingleInstanceLock()) {
   const previewPickers = new Map()
   const previewWindows = new Map()
   const previewFiles = new Map()
+  const previewLocations = new Map()
 
   function windowIconPath() {
     const iconFile = process.platform === 'win32' ? 'tray.ico' : 'tray.png'
@@ -78,6 +82,7 @@ if (!app.requestSingleInstanceLock()) {
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1,
         launcherVisible: config.settings?.launcherVisible !== false,
+        startAtLogin: config.settings?.startAtLogin !== false,
         launcherSize: Number.isFinite(config.settings?.launcherSize?.width) && Number.isFinite(config.settings?.launcherSize?.height)
           ? { width: Math.max(320, config.settings.launcherSize.width), height: Math.max(360, config.settings.launcherSize.height) } : null,
         launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
@@ -88,7 +93,7 @@ if (!app.requestSingleInstanceLock()) {
         typeof file?.folderPath === 'string' && typeof file?.relativePath === 'string' && Number.isFinite(file?.lastOpened)).slice(0, 30) : []
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true }
       recentDocuments = []
       lastAutoPushDate = null
     }
@@ -255,7 +260,7 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     const window = new BrowserWindow({
-      width: 480,
+      width: 820,
       height: 560,
       icon: windowIconPath(),
       opacity: settings.opacity,
@@ -276,11 +281,15 @@ if (!app.requestSingleInstanceLock()) {
     })
 
     const webContentsId = window.webContents.id
+    previewLocations.set(webContentsId, { folderPath, relativePath })
+    window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
+    window.webContents.on('will-navigate', event => event.preventDefault())
     previewWindows.set(key, window)
     window.on('closed', () => {
       previewWindows.delete(key)
       previewFiles.get(webContentsId)?.dispose()
       previewFiles.delete(webContentsId)
+      previewLocations.delete(webContentsId)
     })
     window.webContents.once('did-finish-load', async () => {
       try {
@@ -292,6 +301,7 @@ if (!app.requestSingleInstanceLock()) {
         window.webContents.send('preview:document', {
           name: path.basename(filePath),
           path: relativePath,
+          directoryURL: pathToFileURL(`${path.dirname(filePath)}${path.sep}`).href,
           content,
           pinned: window.isAlwaysOnTop()
         })
@@ -559,6 +569,20 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function registerSettingsHandlers() {
+    ipcMain.handle('settings:set-start-at-login', (event, enabled) => {
+      if (event.sender !== settingsWindow?.webContents || typeof enabled !== 'boolean') return { success: false }
+      const previous = settings.startAtLogin
+      try {
+        applyStartup(enabled)
+        settings.startAtLogin = enabled
+        saveFolders()
+        return { success: true, enabled }
+      } catch (error) {
+        settings.startAtLogin = previous
+        try { applyStartup(previous) } catch {}
+        return { success: false, enabled: previous, message: error.message }
+      }
+    })
     ipcMain.handle('settings:set-shortcut', (event, shortcut) => {
       if (event.sender !== settingsWindow?.webContents) return { success: false }
       return setGlobalShortcut(typeof shortcut === 'string' ? shortcut : null)
@@ -589,6 +613,39 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function registerPreviewHandlers() {
+    ipcMain.handle('preview:paste-image', (event, bytes) => {
+      const location = previewLocations.get(event.sender.id)
+      if (!location || !previewFiles.has(event.sender.id)) return { ok: false }
+      try {
+        if (bytes !== undefined && (!(bytes instanceof Uint8Array) || bytes.byteLength > 25 * 1024 * 1024)) throw new Error('Invalid image')
+        const image = bytes === undefined ? clipboard.readImage() : nativeImage.createFromBuffer(Buffer.from(bytes))
+        if (image.isEmpty()) return { ok: false }
+        const size = image.getSize()
+        if (size.width * size.height > 50 * 1024 * 1024) throw new Error('Image too large')
+        const relativePath = saveMarkdownImage(location.folderPath, location.relativePath, image.toPNG())
+        refreshTrayMenu()
+        return { ok: true, relativePath }
+      } catch { return { ok: false, message: tr('preview.imageFailed') } }
+    })
+    ipcMain.handle('preview:resolve-image', (event, url) => {
+      const location = previewLocations.get(event.sender.id)
+      if (!location || !previewFiles.has(event.sender.id) || typeof url !== 'string') return null
+      return resolveMarkdownImage(location.folderPath, url)
+    })
+    ipcMain.handle('preview:open-link', async (event, url) => {
+      const location = previewLocations.get(event.sender.id)
+      if (!location || typeof url !== 'string') return false
+      try {
+        const parsed = new URL(url)
+        if (['https:', 'http:'].includes(parsed.protocol)) { await shell.openExternal(parsed.href); return true }
+        if (parsed.protocol === 'file:') {
+          const relative = path.relative(location.folderPath, fileURLToPath(parsed)).split(path.sep).join('/')
+          const target = managedDocumentPath(location.folderPath, relative)
+          if (fs.existsSync(target)) { await openMarkdownPreview(location.folderPath, relative); return true }
+        }
+      } catch {}
+      return false
+    })
     ipcMain.handle('picker:toggle-pin', event => {
       const picker = previewPickers.get(event.sender.id)
       if (!picker || picker.window.isDestroyed()) return false
@@ -873,6 +930,12 @@ if (!app.requestSingleInstanceLock()) {
 
   app.on('window-all-closed', () => {})
 
+  function applyStartup(enabled) {
+    if (process.platform === 'win32' && app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: enabled, enabled, path: process.execPath, args: ['--background'] })
+    }
+  }
+
   app.whenReady().then(() => {
     if (process.platform === 'win32') app.setAppUserModelId('com.smallside.floade')
     configFile = path.join(app.getPath('userData'), 'folders.json')
@@ -925,9 +988,7 @@ if (!app.requestSingleInstanceLock()) {
       onVisibilityChange: refreshTrayMenu
     })
     refreshTrayMenu()
-    if (process.platform === 'win32' && app.isPackaged) {
-      app.setLoginItemSettings({ openAtLogin: true })
-    }
+    applyStartup(settings.startAtLogin)
     runDailyPush()
     autoPushTimer = setInterval(runDailyPush, 60 * 1000)
     if (settings.shortcut) {

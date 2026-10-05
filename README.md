@@ -33,6 +33,8 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 - Searches Markdown files across added folders; the global shortcut focuses search, Enter opens the selected document, and Esc closes the panel
 - Adds existing local folders through the native folder picker
 - Opens one or more local Markdown files in editable desktop windows
+- Pastes screenshots with Ctrl+V, saves PNGs beside the Markdown in `images/`, and inserts relative image links
+- Renders live Markdown with Edit, Split and Preview modes, including images, tables, task lists and fenced code blocks
 - Supports always-on-top controls in both the Markdown picker and document windows
 - Provides a global shortcut recorder with chords of up to three keys
 - Translates a dragged screen region with bundled local OCR and Google Translate
@@ -119,6 +121,10 @@ Select **Preview** (`預覽`) on a folder card to choose one or more `.md` files
 
 Open Markdown windows reload external file changes automatically. If the editor also has unsaved changes, Floade keeps the draft and blocks saving until you copy your edits and confirm **Reload from disk**.
 
+Select **Edit**, **Split** or **Preview** at the top of a document window. The selected mode is remembered. The rendered view updates as you type, and relative images resolve from the Markdown file's directory. Rendering uses [Marked](https://marked.js.org/) and sanitizes its HTML with [DOMPurify](https://github.com/cure53/DOMPurify).
+
+Take a screenshot, then press **Ctrl+V** in the document. Floade saves a uniquely named PNG in an `images` directory beside that Markdown file and inserts an image reference at the cursor. The Markdown autosaves and the image appears in the rendered view. Images remain alongside the document when it is renamed. Keep the images with the Markdown when moving or sharing files; pushing the folder includes them unless your Git ignore rules exclude them.
+
 Select **Settings** (`設定`) from the main tray menu to record system-wide shortcuts for opening the floating panel and OCR screen translation. A shortcut may contain up to three simultaneous keys. The default translation shortcut is `Alt+Shift+T`. Press it, drag a rectangle around the text, and Floade opens the translated result without reading or replacing the clipboard. Chinese is translated to English; other detected languages are translated to Traditional Chinese. The same page controls the interface language and the opacity of all Floade windows from 40% to 100%. Floade follows the operating-system language by default and falls back to English for unsupported languages.
 
 `Push` runs the equivalent of:
@@ -135,7 +141,7 @@ git push -u origin main
 
 Floade does not force-push. A repository with conflicting remote history produces a failure notification instead of overwriting the remote.
 
-On Windows, the installed app starts at sign-in so the daily push can run. The automatic push uses the same safe Git flow as manual **Push** and only attempts folders with local changes. If Floade is closed or the computer is off at 20:00, it tries once after the next launch that day. Failed pushes show an error and can be retried manually.
+On Windows, the installed app starts in the background at sign-in by default. Use **Settings → Start with Windows** to turn this on or off; the setting persists across launches. The automatic push uses the same safe Git flow as manual **Push** and only attempts folders with local changes. If Floade is closed or the computer is off at 20:00, it tries once after the next launch that day. Failed pushes show an error and can be retried manually.
 
 ## Commands
 

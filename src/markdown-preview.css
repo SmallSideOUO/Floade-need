@@ -112,3 +112,28 @@ button:focus-visible {
 #reload { flex: 0 0 auto; border: 1px solid #53535c; border-radius: 5px; background: #26262b; color: #e5e5e8; cursor: pointer; font-size: 10px; }
 footer { flex: 0 0 auto; gap: 8px; padding: 6px 16px; }
 #status { min-width: 0; margin-left: auto; line-height: 1.5; }
+.view-controls { display: flex; flex: 0 0 auto; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 15px; border-bottom: 1px solid #27272d; }
+.view-controls button { padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: #8c8c96; cursor: pointer; font: inherit; font-size: 11px; }
+.view-controls button[aria-pressed="true"] { background: #29292f; color: #f4f4f5; }
+.view-controls small { color: #65656f; font-size: 10px; }
+#workspace { display: grid; grid-template-columns: 1fr 1fr; flex: 1; min-height: 0; }
+#editor, #rendered { min-width: 0; height: 100%; }
+#rendered { margin: 0; padding: 18px 22px; overflow: auto; border-left: 1px solid #29292f; color: #dedee4; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+#workspace[data-view="edit"], #workspace[data-view="preview"] { grid-template-columns: 1fr; }
+#workspace[data-view="edit"] #rendered, #workspace[data-view="preview"] #editor { display: none; }
+#workspace[data-view="preview"] #rendered { border-left: 0; }
+#rendered > :first-child { margin-top: 0; }
+#rendered h1, #rendered h2, #rendered h3 { color: #f5f5f7; line-height: 1.3; }
+#rendered h1 { font-size: 24px; border-bottom: 1px solid #34343b; padding-bottom: 9px; }
+#rendered h2 { font-size: 20px; }
+#rendered h3 { font-size: 16px; }
+#rendered img { display: block; max-width: 100%; height: auto; margin: 12px 0; border-radius: 6px; }
+#rendered a { color: #8bbcff; cursor: pointer; text-decoration: underline; }
+#rendered pre { overflow: auto; padding: 12px; border: 1px solid #303037; border-radius: 8px; background: #1a1a1e; }
+#rendered code { font-family: "Cascadia Code", Consolas, monospace; font-size: .92em; background: #222228; padding: 2px 4px; border-radius: 3px; }
+#rendered pre code { padding: 0; background: transparent; }
+#rendered blockquote { margin-left: 0; padding-left: 12px; border-left: 3px solid #555564; color: #9f9faa; }
+#rendered table { display: block; overflow: auto; border-collapse: collapse; }
+#rendered th, #rendered td { padding: 6px 10px; border: 1px solid #393941; }
+#rendered hr { border: 0; border-top: 1px solid #393941; }
+@media (max-width: 540px) { #workspace[data-view="split"] { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } #rendered { border-left: 0; border-top: 1px solid #29292f; } }

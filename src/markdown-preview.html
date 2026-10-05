@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src file: https: http: data: blob:; connect-src 'none'; base-uri 'none'; form-action 'none'">
     <title>Markdown</title>
     <link rel="stylesheet" href="./markdown-preview.css">
   </head>
@@ -23,7 +24,8 @@
           <button id="close" class="close" type="button" data-i18n-title="common.close">×</button>
         </div>
       </header>
-      <textarea id="editor" data-i18n-aria="preview.content" spellcheck="false"></textarea>
+      <nav class="view-controls" data-i18n-aria="preview.viewMode"><div><button type="button" data-view="edit" data-i18n="preview.edit">編輯</button><button type="button" data-view="split" data-i18n="preview.split">分割</button><button type="button" data-view="preview" data-i18n="preview.render">預覽</button></div><small data-i18n="preview.pasteHint">Ctrl+V 貼上圖片</small></nav>
+      <section id="workspace" data-view="split"><textarea id="editor" data-i18n-aria="preview.content" spellcheck="false"></textarea><article id="rendered" tabindex="0" data-i18n-aria="preview.render"></article></section>
       <footer>
         <button id="reload" type="button" data-i18n="preview.reload" hidden>Reload from disk</button>
         <span>Markdown</span>
@@ -31,6 +33,9 @@
       </footer>
     </main>
     <script src="./i18n-renderer.js"></script>
+    <script src="../node_modules/marked/lib/marked.umd.js"></script>
+    <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+    <script src="./markdown-renderer.js"></script>
     <script src="./markdown-preview.js"></script>
   </body>
 </html>
