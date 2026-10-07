@@ -200,17 +200,23 @@ if (isBall) {
       addFile.disabled = !folder.exists || folder.busy
       addFile.addEventListener('click', () => editFile('create', { folderPath: folder.path }))
       actions.append(addFile)
-      for (const [action, label] of [['preview', 'launcher.preview'], ['push', folder.pushing ? 'launcher.pushing' : 'launcher.push'], ['remove', 'launcher.delete']]) {
+      for (const [action, label] of [['pull', 'launcher.pull'], ['preview', 'launcher.preview'], ['push', folder.pushing ? 'launcher.pushing' : 'launcher.push'], ['remove', 'launcher.delete']]) {
         const button = document.createElement('button')
         button.type = 'button'
         button.dataset.action = action
         button.textContent = t(label)
-        button.disabled = action === 'push' ? !folder.canPush : action === 'preview' ? !folder.exists : folder.busy
+        button.disabled = action === 'pull' ? !folder.repo || folder.busy || !folder.exists : action === 'push' ? !folder.canPush : action === 'preview' ? !folder.exists : folder.busy
         if (action === 'remove') button.className = 'delete'
         button.addEventListener('click', () => void perform(action, folder.path))
         actions.append(button)
       }
       card.append(heading, actions)
+      if (folder.syncStatus) {
+        const sync = document.createElement('small')
+        sync.className = 'folder-sync'
+        sync.textContent = t(`pull.${folder.syncStatus}`)
+        card.append(sync)
+      }
       const files = document.createElement('div')
       files.id = heading.getAttribute('aria-controls')
       files.className = 'folder-documents'

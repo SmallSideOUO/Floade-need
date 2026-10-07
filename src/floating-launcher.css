@@ -97,3 +97,5 @@ dialog p { font-size: 11px; color: #92929c; line-height: 1.6; overflow-wrap: any
 #file-error { color: #ed8b7f; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .dialog-actions button { padding: 6px 12px; border: 1px solid #44444d; border-radius: 6px; background: #27272d; color: #ddd; font-size: 11px; }
+
+.folder-sync { display: block; margin-top: 7px; color: #94949f; font-size: 10px; }

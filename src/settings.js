@@ -158,6 +158,7 @@ window.floadeSettings.onState(state => {
   opacityInput.value = String(Math.round(state.opacity * 100))
   languageSelect.value = state.language || 'system'
   startupInput.checked = state.startAtLogin !== false
+  document.querySelector('#auto-pull').checked = state.autoPull !== false
   updateOpacityDisplay()
   renderAll()
 })
@@ -237,3 +238,14 @@ startupInput.addEventListener('change', async () => {
   status.textContent = result.success ? t('settings.startupSaved') : result.message || t('settings.startupFailed')
   status.className = `status ${result.success ? 'success' : 'error'}`
 })
+
+document.querySelector('#auto-pull').addEventListener('change', async event => {
+  const input = event.target
+  input.disabled = true
+  try {
+    const result = await window.floadeSettings.setAutoPull(input.checked)
+    input.checked = Boolean(result.enabled)
+    document.querySelector('#pull-status').textContent = result.success ? t('settings.saved') : result.message || t('settings.startupFailed')
+  } finally { input.disabled = false }
+})
+document.querySelector('#open-mobile').addEventListener('click', () => window.floadeSettings.openMobile())

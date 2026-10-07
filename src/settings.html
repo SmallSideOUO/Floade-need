@@ -24,6 +24,14 @@
           <p id="startup-status" class="status" aria-live="polite"></p>
         </article>
 
+        <article class="setting-card">
+          <label class="startup-row"><div class="setting-copy"><h2 data-i18n="settings.autoPull">自動接收更新</h2><p data-i18n="settings.autoPullDescription">每分鐘接收 GitHub 更新。本機有修改或文件開啟中時暫停，不覆蓋草稿。</p></div><input id="auto-pull" type="checkbox" data-i18n-aria="settings.autoPull"></label>
+          <p id="pull-status" class="status" aria-live="polite"></p>
+        </article>
+        <article class="setting-card">
+          <div class="setting-copy"><h2 data-i18n="settings.mobile">手機文件</h2><p data-i18n="settings.mobileDescription">Android 可加入主畫面，瀏覽、編輯同一個 GitHub 儲存庫。</p></div>
+          <button id="open-mobile" class="secondary" type="button" data-i18n="settings.openMobile">開啟手機版</button>
+        </article>
         <article class="setting-card setting-language-card">
           <div class="setting-copy">
             <h2 data-i18n="settings.language">語言</h2>

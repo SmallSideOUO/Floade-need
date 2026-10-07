@@ -14,6 +14,7 @@ import { createLocalApi, attachControlSocket } from './local-api.mjs'
 import { createFloatingLauncher } from './floating-launcher.mjs'
 import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './launcher-files.mjs'
 import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
+import { createAutoPull } from './pull-folder.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -32,6 +33,8 @@ if (!app.requestSingleInstanceLock()) {
   let registeredShortcut
   let registeredTranslationShortcut
   let screenTranslator
+  let autoPull
+  const pullingFolders = new Set()
   let floatingLauncher
   let recentDocuments = []
   let documentIndex = { signature: '', updated: 0, documents: [] }
@@ -45,6 +48,7 @@ if (!app.requestSingleInstanceLock()) {
     opacity: 1,
     launcherVisible: true,
     startAtLogin: true,
+    autoPull: true,
     launcherSize: null,
     launcherPosition: null
   }
@@ -83,6 +87,7 @@ if (!app.requestSingleInstanceLock()) {
           : 1,
         launcherVisible: config.settings?.launcherVisible !== false,
         startAtLogin: config.settings?.startAtLogin !== false,
+        autoPull: config.settings?.autoPull !== false,
         launcherSize: Number.isFinite(config.settings?.launcherSize?.width) && Number.isFinite(config.settings?.launcherSize?.height)
           ? { width: Math.max(320, config.settings.launcherSize.width), height: Math.max(360, config.settings.launcherSize.height) } : null,
         launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
@@ -93,7 +98,7 @@ if (!app.requestSingleInstanceLock()) {
         typeof file?.folderPath === 'string' && typeof file?.relativePath === 'string' && Number.isFinite(file?.lastOpened)).slice(0, 30) : []
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true }
       recentDocuments = []
       lastAutoPushDate = null
     }
@@ -242,6 +247,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function openMarkdownPreview(folderPath, relativePath) {
+    if (pullingFolders.has(folderPath)) throw new Error(tr('launcher.busy'))
     const filePath = markdownPath(folderPath, relativePath)
     if (!filePath || !fs.existsSync(filePath)) return
     if (folders.some(folder => folder.path === folderPath)) {
@@ -322,41 +328,18 @@ if (!app.requestSingleInstanceLock()) {
 
   async function syncFolderForPreview(folder) {
     if (!folder.repo) return
-
-    const gitDirectory = path.join(folder.path, '.git')
-    const remoteUrl = `https://github.com/${folder.repo}.git`
-    if (!fs.existsSync(gitDirectory)) {
-      const entries = await fs.promises.readdir(folder.path)
-      if (entries.length === 0) {
+    if (pullingFolders.has(folder.path) || pushingFolders.has(folder.path) || linkingFolders.has(folder.path)) return
+    if (!fs.existsSync(path.join(folder.path, '.git'))) {
+      if (fs.readdirSync(folder.path).length) return
+      pullingFolders.add(folder.path)
+      try {
         await command('gh', ['auth', 'setup-git'], folder.path)
-        await command('git', ['clone', remoteUrl, '.'], folder.path)
-      }
+        await command('git', ['clone', '--branch', 'main', `https://github.com/${folder.repo}.git`, folder.path], path.dirname(folder.path))
+      } finally { pullingFolders.delete(folder.path) }
       return
     }
-
-    const { stdout: status } = await command(
-      'git',
-      ['status', '--porcelain', '--untracked-files=normal'],
-      folder.path
-    )
-    if (status.trim()) return
-
-    await command('gh', ['auth', 'setup-git'], folder.path)
-    const { stdout: remotes } = await command('git', ['remote'], folder.path)
-    if (remotes.split(/\r?\n/).includes('origin')) {
-      await command('git', ['remote', 'set-url', 'origin', remoteUrl], folder.path)
-    } else {
-      await command('git', ['remote', 'add', 'origin', remoteUrl], folder.path)
-    }
-
-    try {
-      await command('git', ['ls-remote', '--exit-code', '--heads', 'origin', 'main'], folder.path)
-    } catch (error) {
-      if (error.code === 2) return
-      throw error
-    }
-
-    await command('git', ['pull', '--ff-only', 'origin', 'main'], folder.path)
+    const result = await autoPull.pull(folder)
+    if (result.status === 'error') throw new Error(result.message)
   }
 
   async function showPreviewPicker(folder) {
@@ -569,6 +552,17 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function registerSettingsHandlers() {
+    ipcMain.handle('settings:set-auto-pull', (event, enabled) => {
+      if (event.sender !== settingsWindow?.webContents || typeof enabled !== 'boolean') return { success: false }
+      const previous = settings.autoPull
+      try { settings.autoPull = enabled; saveFolders(); if (enabled) void autoPull.run(); return { success: true, enabled } }
+      catch (error) { settings.autoPull = previous; return { success: false, enabled: previous, message: error.message } }
+    })
+    ipcMain.handle('settings:open-mobile', event => {
+      if (event.sender !== settingsWindow?.webContents) return
+      const repo = folders.find(folder => folder.repo)?.repo
+      return shell.openExternal('https://smallsideouo.github.io/Floade-need/mobile/' + (repo ? '#repo=' + encodeURIComponent(repo) : ''))
+    })
     ipcMain.handle('settings:set-start-at-login', (event, enabled) => {
       if (event.sender !== settingsWindow?.webContents || typeof enabled !== 'boolean') return { success: false }
       const previous = settings.startAtLogin
@@ -718,6 +712,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   async function pushFolder(folder) {
+    if (pullingFolders.has(folder.path)) return false
     if (!hasPushableChanges(folder)) {
       refreshTrayMenu()
       return false
@@ -789,7 +784,7 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function hasPushableChanges(folder) {
-    if (!folder.repo || pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path) || !fs.existsSync(folder.path)) {
+    if (!folder.repo || pushingFolders.has(folder.path) || pullingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path) || !fs.existsSync(folder.path)) {
       return false
     }
 
@@ -848,7 +843,7 @@ if (!app.requestSingleInstanceLock()) {
     return {
       folders: folders.map(folder => ({ ...folder, name: path.basename(folder.path) || folder.path,
         exists: fs.existsSync(folder.path), pushing: pushingFolders.has(folder.path),
-        busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path), canPush: !documentMutations.has(folder.path) && hasPushableChanges(folder) })),
+        busy: pushingFolders.has(folder.path) || pullingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path), canPush: !documentMutations.has(folder.path) && hasPushableChanges(folder), syncStatus: autoPull?.states.get(folder.path)?.status })),
       documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath))
         .map(document => ({ ...document, lastOpened: recentDocuments.find(file => file.folderPath === document.folderPath && file.relativePath === document.relativePath)?.lastOpened || 0 })),
       indexing: Boolean(documentScan)
@@ -874,9 +869,14 @@ if (!app.requestSingleInstanceLock()) {
     const folder = folders.find(folder => folder.path === folderPath)
     if (!folder) throw new Error(tr('folder.missing'))
     if (name === 'preview') return showPreviewPicker(folder)
+    if (name === 'pull') {
+      const result = await autoPull.pull(folder)
+      if (result.status === 'error') throw new Error(result.message)
+      return result
+    }
     if (name === 'push') { if (!(await pushFolder(folder))) throw new Error(tr('push.failed')); return }
     if (name === 'remove') {
-      if (pushingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
+      if (pushingFolders.has(folder.path) || pullingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
       return removeFolder(folder)
     }
     throw new Error('Unknown Floade action')
@@ -886,7 +886,7 @@ if (!app.requestSingleInstanceLock()) {
   async function mutateLauncherDocument(request) {
     const folder = folders.find(folder => folder.path === request?.folderPath)
     if (!folder) throw new Error(tr('folder.missing'))
-    if (documentMutations.has(folder.path) || pushingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
+    if (documentMutations.has(folder.path) || pushingFolders.has(folder.path) || pullingFolders.has(folder.path) || linkingFolders.has(folder.path)) throw new Error(tr('launcher.busy'))
     documentMutations.add(folder.path)
     try {
       let relativePath
@@ -961,7 +961,7 @@ if (!app.requestSingleInstanceLock()) {
       getFolders: () => folders,
       command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
       busyFolders: linkingFolders,
-      isPushing: folderPath => pushingFolders.has(folderPath),
+      isPushing: folderPath => pushingFolders.has(folderPath) || pullingFolders.has(folderPath),
       refresh: refreshTrayMenu,
       saveLink: (folder, repo) => {
         const previous = folder.repo
@@ -987,6 +987,15 @@ if (!app.requestSingleInstanceLock()) {
       saveSize: size => { settings.launcherSize = size; saveFolders() },
       onVisibilityChange: refreshTrayMenu
     })
+    autoPull = createAutoPull({
+      getFolders: () => folders, enabled: () => settings.autoPull,
+      busy: folderPath => pushingFolders.has(folderPath) || linkingFolders.has(folderPath) || documentMutations.has(folderPath),
+      hasOpenDocument: folderPath => [...previewLocations.values()].some(location => location.folderPath === folderPath),
+      pulling: pullingFolders,
+      command: (program, args, cwd) => execFileAsync(program, args, { cwd, windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
+      changed: () => { documentIndex.updated = 0; refreshTrayMenu() }
+    })
+    autoPull.start()
     refreshTrayMenu()
     applyStartup(settings.startAtLogin)
     runDailyPush()
@@ -1002,6 +1011,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', () => {
+    autoPull?.dispose()
     clearInterval(autoPushTimer)
     globalShortcut.unregisterAll()
     void screenTranslator?.dispose()

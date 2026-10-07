@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0c0c0f"><meta name="description" content="Floade 手機文件：瀏覽、編輯你的 GitHub 文件，離線保留草稿。">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self' https://api.github.com; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Floade 文件</title><link rel="manifest" href="./manifest.webmanifest"><link rel="icon" href="./icon.svg"><link rel="stylesheet" href="./app.css">
+  <script defer src="./vendor/marked.umd.js"></script><script defer src="./vendor/purify.min.js"></script><script type="module" src="./app.js"></script>
+</head>
+<body>
+  <header><a class="brand" href="./"><i></i>Floade <small>文件</small></a><div><button id="install" hidden>加入主畫面</button><button id="settings" aria-label="連線設定">設定</button></div></header>
+  <main>
+    <section id="setup" hidden>
+      <p class="eyebrow">隨手開啟，接著寫下去</p><h1>你的文件，<br>現在也在手機上。</h1><p class="intro">連上原本的 GitHub 儲存庫。電腦關機時，也能瀏覽、編輯已同步的文件。</p>
+      <form id="connect-form">
+        <label>儲存庫<input id="repository" placeholder="your-name/notes" autocomplete="off" required></label>
+        <label>分支<input id="branch" value="main" autocomplete="off" required></label>
+        <label>GitHub 存取權杖<input id="token" type="password" autocomplete="off" placeholder="github_pat_…" required spellcheck="false"></label>
+        <p class="help">首次連線：<a href="https://github.com/settings/personal-access-tokens/new?name=Floade%20Mobile&amp;contents=write" target="_blank" rel="noopener noreferrer">建立指定儲存庫的權杖 ↗</a>，選擇這個儲存庫，並將 Contents 設為 Read and write。權杖只直接傳給 GitHub。</p>
+        <label class="check"><input id="remember" type="checkbox" checked>記住此裝置（權杖儲存在此瀏覽器）</label>
+        <button class="primary" id="connect" type="submit">連線並開啟文件</button>
+      </form>
+      <button id="cancel-setup" hidden>返回文件</button><button id="disconnect" hidden>登出此裝置</button>
+      <p class="help">Android：在 Chrome 選單選「安裝應用程式」或「加入主畫面」。離線可閱讀已開啟文件，編輯會保留草稿；重新連線後按儲存。</p>
+    </section>
+    <section id="library" hidden>
+      <div class="page-title"><div><p class="eyebrow" id="repo-label"></p><h1>文件</h1></div><button id="refresh">重新整理</button></div>
+      <label class="search"><span>⌕</span><input id="search" type="search" placeholder="搜尋文件或資料夾" aria-label="搜尋文件或資料夾"></label>
+      <section id="recent-section"><h2>最近文件</h2><div id="recents"></div></section>
+      <div class="section-title"><h2 id="list-title">資料夾與文件</h2><button id="new-file">＋ 新文件</button></div><div id="tree"></div>
+    </section>
+    <section id="document" hidden>
+      <div class="document-heading"><button id="back">‹ 文件</button><button id="save" class="primary">儲存</button></div><h1 id="document-name"></h1><p id="document-path" class="muted"></p>
+      <div class="tabs"><button id="view" aria-pressed="true">閱讀</button><button id="edit" aria-pressed="false">編輯</button><button id="reload">檢查更新</button></div>
+      <p id="document-status" class="muted" role="status"></p>
+      <article id="rendered" class="markdown"></article><textarea id="editor" hidden aria-label="文件內容" spellcheck="false"></textarea>
+      <section id="conflict" hidden><h2>另一台裝置也修改了這份文件</h2><p>你的草稿已保留。請比較最新版本，編輯草稿後按「以此草稿合併儲存」。</p><pre id="remote-content"></pre><button id="resolve">以此草稿合併儲存</button><button id="use-remote">採用最新版本</button></section>
+    </section>
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+  <footer>Floade · 文件留在你的 GitHub</footer>
+</body>
+</html>

@@ -20,9 +20,12 @@ For my personal workflow, this gives me:
 
 I also personally needed a faster way to translate text already visible on my screen. Instead of copying text and replacing the current clipboard contents, I can press a shortcut, drag over the text, and let Floade run local OCR before showing the translation.
 
-Floade itself has no hosted backend and does not receive a copy of the linked folder. It automates local Git and GitHub CLI operations. Folder synchronization uses Git; continuous background pull and conflict resolution are not implemented yet.
+Floade itself has no hosted backend and does not receive a copy of the linked folder. It automates local Git and GitHub CLI operations. Folder synchronization uses Git; background Pull checks every minute and only fast-forwards clean, idle folders on main. Divergent histories require explicit resolution.
 
 ## Features
+
+- [Android-installable mobile web app](https://smallsideouo.github.io/Floade-need/mobile/) for GitHub-backed Markdown browsing/editing, offline drafts and reviewed conflict resolution; see the [mobile guide](docs/mobile-guide.md)
+- Automatically receives clean fast-forward updates every minute; pauses for local changes, open documents and busy folders, with manual Update and a settings toggle
 
 - Provides a draggable transparent floating ball with a breathing white center; position and visibility are remembered locally
 - Opens a compact hover panel with Add folder, translation tools, and folder cards for Preview, Push, and Delete; the panel stays open when the pointer moves into it and closes after leaving

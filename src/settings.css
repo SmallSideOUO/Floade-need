@@ -201,3 +201,6 @@ input[type="range"]:focus-visible { outline: 2px solid #6da8ff; outline-offset: 
 button:focus-visible { outline: 2px solid #6da8ff; outline-offset: 2px; }
 ::-webkit-scrollbar { width: 8px; }
 ::-webkit-scrollbar-thumb { border: 2px solid #111113; border-radius: 999px; background: #3c3c43; }
+
+#auto-pull { width: 18px; height: 18px; accent-color: #78aef8; }
+#open-mobile { margin-top: 14px; }
