@@ -49,10 +49,7 @@ button:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-thumb { background: #35353d; border-radius: 9px; }
 @media (prefers-reduced-motion: reduce) { .light { animation: none; opacity: .85; } }
-.quick-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 12px 11px; }
-.quick-actions button { position: relative; }
-#communication-unread { position: absolute; top: 4px; right: 4px; border-radius: 8px; padding: 1px 4px; font-size: 9px; background: #c7d6ff; color: #202027; }
-#ball-unread { position: absolute; right: 6px; top: 6px; width: 7px; height: 7px; border-radius: 50%; background: #b7ceff; box-shadow: 0 0 0 2px #080809; }
+.quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 12px 11px; }
 .quick-actions button { display: grid; justify-items: center; gap: 5px; padding: 10px 4px 8px; border: 1px solid #2a2a30; border-radius: 9px; background: #17171a; color: #ceced5; }
 .quick-actions button:hover { background: #25252a; border-color: #44444d; color: #fff; }
 .quick-actions span { font-size: 18px; line-height: 20px; }

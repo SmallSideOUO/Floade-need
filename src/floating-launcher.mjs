@@ -11,7 +11,6 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   let hoverTimer
   let disposed = false
   let dataRevision = 0
-  let unread = 0
   let manualSize = getState().size
   let panelHeight = manualSize?.height || 450
   let resizing
@@ -32,7 +31,6 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   const panel = createWindow('panel', placePanel(position, area))
   const ballReady = ball.loadFile(path.join(appPath, 'src', 'floating-launcher.html'), { query: { mode: 'ball', lang: getLocale() } })
   const panelReady = panel.loadFile(path.join(appPath, 'src', 'floating-launcher.html'), { query: { mode: 'panel', lang: getLocale() } })
-  void ballReady.then(() => { if (!disposed) ball.webContents.send('launcher:unread', unread) })
   void ballReady.then(() => { if (visible && !disposed) ball.showInactive() })
   const fromBall = event => event.sender === ball.webContents
   const fromPanel = event => event.sender === panel.webContents
@@ -184,7 +182,6 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   screen.on('display-metrics-changed', onDisplayChange)
   return {
     ball, panel, showPanel, hidePanel, refreshData, setVisible, isVisible: () => visible,
-    setUnread(count) { unread = Math.max(0, Number(count) || 0); if (!disposed && !ball.isDestroyed()) ball.webContents.send('launcher:unread', unread) },
     dispose() {
       disposed = true
       clearTimeout(closeTimer)

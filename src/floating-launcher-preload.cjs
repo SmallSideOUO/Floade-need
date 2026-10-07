@@ -11,6 +11,5 @@ contextBridge.exposeInMainWorld('floadeLauncher', {
   action: (name, folderPath) => ipcRenderer.invoke('launcher:action', name, folderPath),
   onData: callback => ipcRenderer.on('launcher:data', (_event, data) => callback(data)),
   onError: callback => ipcRenderer.on('launcher:error', (_event, message) => callback(message)),
-  onFocus: callback => ipcRenderer.on('launcher:focus', callback),
-  onUnread: callback => ipcRenderer.on('launcher:unread', (_event, count) => callback(count))
+  onFocus: callback => ipcRenderer.on('launcher:focus', callback)
 })

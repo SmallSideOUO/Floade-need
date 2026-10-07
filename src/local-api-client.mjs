@@ -30,9 +30,9 @@ export function parseApiArguments(args) {
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index]
     if (flag === '--replace') { params.replace = true; continue }
-    if (!['--path', '--repo', '--owner', '--limit', '--channel', '--after', '--text', '--agent', '--target', '--replyTo', '--id', '--timeout', '--name', '--deviceName'].includes(flag) || flags[index + 1] === undefined) throw new Error(`Invalid API argument: ${flag}`)
+    if (!['--path', '--repo', '--owner', '--limit'].includes(flag) || flags[index + 1] === undefined) throw new Error(`Invalid API argument: ${flag}`)
     const value = flags[++index]
-    params[flag.slice(2)] = ['--limit', '--channel', '--timeout'].includes(flag) ? Number(value) : value
+    params[flag.slice(2)] = flag === '--limit' ? Number(value) : value
   }
   return { method, params }
 }

@@ -35,7 +35,9 @@ async function fixture(t) {
 
 test('API discovers capabilities, lists registered folders and writable private repositories', async t => {
   const f = await fixture(t)
-  assert.ok((await f.api({ method: 'api.describe' })).result.methods['folders.link'])
+  assert.deepEqual(Object.keys((await f.api({ method: 'api.describe' })).result.methods), ['api.describe', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.equal((await f.api({ method: 'communication.send', params: { text: 'retired client' } })).error.code, 'METHOD_NOT_FOUND')
+  assert.equal(f.calls.length, 0, 'retired methods never contact GitHub')
   assert.deepEqual((await f.api({ method: 'folders.list' })).result.folders, [{ path: f.directory, repo: null, exists: true, busy: false }])
   assert.deepEqual((await f.api({ method: 'repositories.list' })).result.repositories, [{ repo: 'fixture/data', permission: 'WRITE' }])
   assert.equal((await f.api({ method: 'repositories.list', params: { limit: 2 } })).result.possiblyTruncated, true)
@@ -127,4 +129,5 @@ test('CLI parses folder paths as data and rejects unsupported flags', () => {
   assert.deepEqual(parseApiArguments(['folders.link', '--path', 'C:\\A B', '--repo', 'fixture/data', '--replace']), { method: 'folders.link', params: { path: 'C:\\A B', repo: 'fixture/data', replace: true } })
   assert.throws(() => parseApiArguments(['folders.link', '--path']), /Invalid API argument/)
   assert.throws(() => parseApiArguments(['folders.link', '--execute', 'anything']), /Invalid API argument/)
+  assert.throws(() => parseApiArguments(['communication.send', '--channel', '1']), /Invalid API argument/)
 })
