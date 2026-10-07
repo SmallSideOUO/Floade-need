@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="./floating-launcher.css">
   </head>
   <body>
-    <button id="ball" type="button" data-i18n-aria="launcher.open"><span class="light"></span></button>
+    <button id="ball" type="button" data-i18n-aria="launcher.open"><span class="light"></span><small id="ball-unread" hidden></small></button>
     <main id="panel" hidden>
       <header><span class="panel-brand"><i></i>Floade</span><div><button id="settings" class="quiet" type="button" data-i18n="settings.heading">設定</button><button id="close" class="quiet" type="button" data-i18n-title="common.close">×</button></div></header>
       <section id="recent-section"><div class="list-heading"><span data-i18n="launcher.recent">最近文件</span></div><div id="recent-documents"></div></section>
@@ -15,6 +15,7 @@
         <button id="add-folder" type="button"><span aria-hidden="true">＋</span><small data-i18n="launcher.addFolder">新增資料夾</small></button>
         <button id="text-translate" type="button"><span aria-hidden="true">文</span><small data-i18n="launcher.translate">文字翻譯</small></button>
         <button id="screen-translate" type="button"><span aria-hidden="true">⌗</span><small data-i18n="launcher.screenTranslate">框選翻譯</small></button>
+        <button id="communication" type="button"><span aria-hidden="true">◌</span><small data-i18n="launcher.communication">AI 通訊</small><b id="communication-unread" hidden></b></button>
       </div>
       <div class="search-row"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-5-5m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg><input id="search" type="search" autocomplete="off" data-i18n-placeholder="launcher.search" data-i18n-aria="launcher.search"></div>
       <div class="list-heading"><span id="list-heading" data-i18n="launcher.folders">資料夾</span><small id="document-count"></small></div>

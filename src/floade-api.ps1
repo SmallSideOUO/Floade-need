@@ -5,6 +5,16 @@ param(
   [string]$Owner,
   [int]$Limit,
   [switch]$Replace,
+  [int]$Channel,
+  [string]$After,
+  [string]$Text,
+  [string]$Agent,
+  [string]$Target,
+  [string]$ReplyTo,
+  [string]$Id,
+  [int]$Timeout,
+  [string]$Name,
+  [string]$DeviceName,
   [string]$PipeName = 'floade-local-data-control'
 )
 $ErrorActionPreference = 'Stop'
@@ -14,8 +24,9 @@ $floadeReader = $null
 $floadeWriter = $null
 try {
   $floadeParams = @{}
-  foreach ($floadeKey in @('Path', 'Repo', 'Owner', 'Limit')) {
-    if ($PSBoundParameters.ContainsKey($floadeKey)) { $floadeParams[$floadeKey.ToLowerInvariant()] = $PSBoundParameters[$floadeKey] }
+  foreach ($floadeKey in @('Path', 'Repo', 'Owner', 'Limit', 'Channel', 'After', 'Text', 'Agent', 'Target', 'ReplyTo', 'Id', 'Timeout', 'Name', 'DeviceName')) {
+    $floadeParameterName = switch ($floadeKey) { 'ReplyTo' { 'replyTo' }; 'DeviceName' { 'deviceName' }; default { $floadeKey.ToLowerInvariant() } }
+    if ($PSBoundParameters.ContainsKey($floadeKey)) { $floadeParams[$floadeParameterName] = $PSBoundParameters[$floadeKey] }
   }
   if ($Replace) { $floadeParams.replace = $true }
   $floadeRequest = @{ method = $Method; params = $floadeParams } | ConvertTo-Json -Compress

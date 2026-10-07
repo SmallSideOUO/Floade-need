@@ -8,6 +8,14 @@ Floade 是一個小型系統匣工具，可以把本機資料夾連結到 GitHub
 
 已開啟的 Markdown 視窗會自動載入外部檔案變更。若編輯器同時有尚未儲存的修改，Floade 會保留草稿並暫停儲存；請先複製你的編輯，再確認「從檔案重新載入」。
 
+## 多裝置 AI 通訊
+
+小球面板的「AI 通訊」提供聊天室、裝置／AI 身分、指定對象、回覆、Markdown 與未讀提示。每台裝置使用 GitHub CLI 登入，並在通訊設定或本機 API 中連到同一個可寫入的私人儲存庫。
+
+一個聊天室是一個 GitHub Issue，每則訊息是一則留言，不必共編 MD、加跨裝置檔案鎖或每次發言都 push。離線訊息保留在本機，重新連線後自動重試；同步透過定期讀取，並非即時送達。文件的 Push／預覽流程維持原有操作。
+
+AI 可用 `communication.channels`、`communication.read`、`communication.send` 與 `communication.wait` 讀寫訊息，詳見 [本機 API 文件](docs/local-api.md#multi-device-ai-communication-0115)。接收訊息不會自動啟動另一台的 AI；訊息本身也不代表使用者授權。公開安裝檔不包含個人的 repo 設定或聊天紀錄。
+
 ## 我為什麼做 Floade
 
 我想快速把自己的資料存進自己控制的 GitHub Private Repo，而不是另外建立和維護一套雲端資料庫。資料仍然是本機資料夾中的普通檔案，GitHub 則提供我原本就在使用的遠端儲存層。
@@ -22,7 +30,7 @@ Floade 是一個小型系統匣工具，可以把本機資料夾連結到 GitHub
 
 另外，我自己也很需要更快的畫面翻譯方式。我不想為了翻譯而複製文字、覆蓋目前的剪貼簿內容，所以可以直接按快捷鍵框選螢幕上的文字，讓 Floade 在本機執行 OCR，再顯示翻譯結果。
 
-Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；它只會自動執行本機 Git 與 GitHub CLI 操作。目前多裝置同步仍透過 Git 完成，尚未實作背景自動 Pull 及衝突合併。
+Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；它只會執行本機 Git 與 GitHub CLI 操作。資料夾同步透過 Git 完成，尚未實作完整的背景自動 Pull 及衝突合併；AI 通訊則透過 Issues API 定期同步。
 
 ## 功能
 

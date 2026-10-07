@@ -14,6 +14,8 @@ import { createLocalApi, attachControlSocket } from './local-api.mjs'
 import { createFloatingLauncher } from './floating-launcher.mjs'
 import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './launcher-files.mjs'
 import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
+import { createCommunication } from './communication.mjs'
+import { createCommunicationWindow } from './communication-window.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -33,6 +35,8 @@ if (!app.requestSingleInstanceLock()) {
   let registeredTranslationShortcut
   let screenTranslator
   let floatingLauncher
+  let communication
+  let communicationWindow
   let recentDocuments = []
   let documentIndex = { signature: '', updated: 0, documents: [] }
   let documentScan
@@ -851,7 +855,8 @@ if (!app.requestSingleInstanceLock()) {
         busy: pushingFolders.has(folder.path) || linkingFolders.has(folder.path) || documentMutations.has(folder.path), canPush: !documentMutations.has(folder.path) && hasPushableChanges(folder) })),
       documents: documentIndex.documents.filter(document => folders.some(folder => folder.path === document.folderPath))
         .map(document => ({ ...document, lastOpened: recentDocuments.find(file => file.folderPath === document.folderPath && file.relativePath === document.relativePath)?.lastOpened || 0 })),
-      indexing: Boolean(documentScan)
+      indexing: Boolean(documentScan),
+      communicationUnread: communication?.snapshot().unread || 0
     }
   }
 
@@ -869,6 +874,10 @@ if (!app.requestSingleInstanceLock()) {
     if (name === 'add-folder') return addFolder()
     if (name === 'text-translate') return screenTranslator?.openTextWindow()
     if (name === 'screen-translate') return screenTranslator?.start()
+    if (name === 'communication') {
+      if (!communicationWindow) throw new Error('AI communication is unavailable. Check the local communication cache.')
+      return communicationWindow.open()
+    }
     if (name === 'settings') return showSettings()
     if (name === 'quit') return app.quit()
     const folder = folders.find(folder => folder.path === folderPath)
@@ -957,7 +966,15 @@ if (!app.requestSingleInstanceLock()) {
       fs.unlinkSync(controlSocket)
     }
 
+    try {
+      communication = createCommunication({ userDataPath: app.getPath('userData'),
+        command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 20 * 1024 * 1024 }) })
+      communicationWindow = createCommunicationWindow({ appPath: app.getAppPath(), iconPath: windowIconPath,
+        getLocale: effectiveLocale, getOpacity: () => settings.opacity, service: communication,
+        changed: () => { floatingLauncher?.setUnread(communication.snapshot().unread); void floatingLauncher?.refreshData() } })
+    } catch (error) { showToast('AI communication', error.message, 'error', 8000) }
     const localApi = createLocalApi({
+      communication,
       getFolders: () => folders,
       command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
       busyFolders: linkingFolders,
@@ -988,6 +1005,7 @@ if (!app.requestSingleInstanceLock()) {
       onVisibilityChange: refreshTrayMenu
     })
     refreshTrayMenu()
+    floatingLauncher.setUnread(communication?.snapshot().unread || 0)
     applyStartup(settings.startAtLogin)
     runDailyPush()
     autoPushTimer = setInterval(runDailyPush, 60 * 1000)
@@ -1006,6 +1024,8 @@ if (!app.requestSingleInstanceLock()) {
     globalShortcut.unregisterAll()
     void screenTranslator?.dispose()
     floatingLauncher?.dispose()
+    communicationWindow?.dispose()
+    communication?.dispose()
     controlServer?.close()
     if (process.platform !== 'win32' && fs.existsSync(controlSocket)) {
       fs.unlinkSync(controlSocket)

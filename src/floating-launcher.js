@@ -3,6 +3,7 @@ const ball = document.querySelector('#ball')
 const panel = document.querySelector('#panel')
 const isBall = new URLSearchParams(location.search).get('mode') === 'ball'
 if (isBall) {
+  window.floadeLauncher.onUnread(count => { document.querySelector('#ball-unread').hidden = !count })
   let dragging = false
   ball.addEventListener('mouseenter', () => window.floadeLauncher.hover(true))
   ball.addEventListener('mouseleave', () => window.floadeLauncher.hover(false))
@@ -250,12 +251,18 @@ if (isBall) {
   panel.addEventListener('mouseenter', () => window.floadeLauncher.hover(true))
   panel.addEventListener('mouseleave', () => window.floadeLauncher.hover(false))
   search.addEventListener('input', render)
-  window.floadeLauncher.onData(next => { data = next; render() })
+  window.floadeLauncher.onData(next => {
+    data = next
+    const badge = document.querySelector('#communication-unread')
+    badge.hidden = !next.communicationUnread
+    badge.textContent = String(next.communicationUnread || '')
+    render()
+  })
   window.floadeLauncher.onError(message => { status.className = 'error'; status.textContent = message })
   window.floadeLauncher.onFocus(() => { search.focus(); search.select() })
   window.addEventListener('floade-locale-changed', render)
   document.querySelector('#close').addEventListener('click', () => window.floadeLauncher.close())
-  for (const name of ['add-folder', 'text-translate', 'screen-translate', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
+  for (const name of ['add-folder', 'text-translate', 'screen-translate', 'communication', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
   window.addEventListener('keydown', event => {
     if (event.isComposing) return
     if (fileDialog.open) return

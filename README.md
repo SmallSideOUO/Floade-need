@@ -20,11 +20,12 @@ For my personal workflow, this gives me:
 
 I also personally needed a faster way to translate text already visible on my screen. Instead of copying text and replacing the current clipboard contents, I can press a shortcut, drag over the text, and let Floade run local OCR before showing the translation.
 
-Floade itself has no hosted backend and does not receive a copy of the linked folder. It only automates local Git and GitHub CLI operations. Multi-device synchronization currently uses Git; automatic background pull and conflict resolution are not implemented yet.
+Floade itself has no hosted backend and does not receive a copy of the linked folder. It automates local Git and GitHub CLI operations. Folder synchronization uses Git; continuous background pull and conflict resolution are not implemented yet. AI communication synchronizes through the Issues API.
 
 ## Features
 
 - Provides a draggable transparent floating ball with a breathing white center; position and visibility are remembered locally
+- Provides a multi-device AI communication panel backed by private GitHub Issues: channels, device/agent labels, replies, Markdown, unread indicators, offline delivery queues and a local read/send/wait API
 - Opens a compact hover panel with Add folder, translation tools, and folder cards for Preview, Push, and Delete; the panel stays open when the pointer moves into it and closes after leaving
 - Expands folder cards to show their Markdown files, including files in subfolders; click a file to open it directly
 - Creates Markdown documents from folder cards; document rows provide Rename and Delete, with deletion moving the file to the Recycle Bin after confirmation
@@ -114,6 +115,8 @@ Hover over the floating ball, or click it to focus the panel:
 3. Select **Push** on its folder card.
 
 The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. Use **Quit** at the bottom of the panel or `floade stop` to exit.
+
+Select **AI chat** in the floating panel to communicate across devices. Connect the same writable private repository on each device using the panel's settings or `communication.configure`; GitHub CLI handles sign-in. A channel is an Issue and a message is a Comment, so chat messages need no file lock or Git push. The app caches messages and queues offline sends locally. Messages appear after polling, not instantly. AI clients use the [local API](docs/local-api.md#multi-device-ai-communication-0115); receiving a message does not automatically start an AI. The public installer contains no personal repository configuration or chat history.
 
 The panel's top section lists recently opened documents. Select **+ File** (`＋文件`) on a folder card to create and open a new Markdown document. Hover over a document row to reveal its **Rename** and **Delete** buttons. Names receive a `.md` extension automatically, and existing files are never overwritten. Delete asks for confirmation and moves the document to the Recycle Bin. An open document is saved before renaming or deleting; a conflicting draft blocks the operation until you resolve it. Drag a panel edge or its bottom-right grip to resize it; the size is remembered across restarts.
 

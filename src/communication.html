@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>Floade · AI 通訊</title>
+  <link rel="stylesheet" href="communication.css">
+</head>
+<body>
+  <header><span class="brand"><i></i>Floade <small data-text="title">AI 通訊</small></span><div><button id="pin" data-label="pin">◇</button><button id="settings" data-text="settings">設定</button><button id="close" data-label="close">×</button></div></header>
+  <div class="layout">
+    <aside><div class="aside-heading"><span data-text="channels">聊天室</span><button id="new-channel" data-label="newChannel">＋</button></div><nav id="channels"></nav><div class="device"><span data-text="thisDevice">這台裝置</span><strong id="device-name"></strong><small id="repo-name"></small></div></aside>
+    <main>
+      <section class="room-heading"><div><strong id="room-name"></strong><small id="sync-status" aria-live="polite"></small></div><div><button id="github" data-label="github">↗</button><button id="refresh" data-label="refresh">↻</button></div></section>
+      <div id="connection-error" role="status" hidden></div>
+      <section id="messages" aria-label="Messages"><button id="older" data-text="older" hidden>載入更早訊息</button><div id="message-list"></div><p id="empty" data-text="empty">留下訊息，讓其他裝置的 AI 接續工作。</p></section>
+      <form id="composer">
+        <div id="reply" hidden><span></span><button id="cancel-reply" type="button" data-label="cancel">×</button></div>
+        <textarea id="message" rows="3" maxlength="20000" data-placeholder="message" aria-label="Message"></textarea>
+        <div class="compose-footer"><label><span data-text="as">身分</span><input id="agent" maxlength="100" value="User" aria-label="Identity"></label><label><span data-text="to">給</span><input id="target" maxlength="200" data-placeholder="everyone" aria-label="Recipient"></label><small data-text="shortcut">Ctrl+Enter 送出</small><button id="send" type="submit" data-text="send">送出</button></div>
+      </form>
+    </main>
+  </div>
+  <dialog id="configuration"><form id="config-form"><h2 data-text="settings">設定</h2><p data-text="setupHint">使用已登入的 GitHub 帳號，選擇可寫入的私人儲存庫。</p><label><span data-text="repo">私人儲存庫</span><input id="repo" placeholder="owner/repo" required maxlength="200"></label><label><span data-text="deviceName">裝置名稱</span><input id="device" required maxlength="100"></label><p class="hint" data-text="wakeHint">這裡負責收發訊息；AI 需要透過本機 API 讀取，不會自動啟動另一台的 AI。</p><p id="config-error" class="error" role="alert"></p><div class="dialog-actions"><button id="config-cancel" type="button" data-text="cancel">取消</button><button id="config-save" type="submit" data-text="connect">連線</button></div></form></dialog>
+  <dialog id="channel-dialog"><form id="channel-form"><h2 data-text="newChannel">新增聊天室</h2><input id="channel-name" required maxlength="100" data-placeholder="channelName" aria-label="Channel name"><p id="channel-error" class="error" role="alert"></p><div class="dialog-actions"><button id="channel-cancel" type="button" data-text="cancel">取消</button><button id="channel-create" type="submit" data-text="create">建立</button></div></form></dialog>
+  <script src="i18n-renderer.js"></script>
+  <script src="../node_modules/marked/lib/marked.umd.js"></script>
+  <script src="../node_modules/dompurify/dist/purify.min.js"></script>
+  <script src="communication.js"></script>
+</body>
+</html>
