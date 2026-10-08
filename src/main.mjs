@@ -15,6 +15,7 @@ import { createFloatingLauncher } from './floating-launcher.mjs'
 import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './launcher-files.mjs'
 import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
 import { createAutoPull } from './pull-folder.mjs'
+import { createAppUpdater, createInstalledAppUpdater } from './app-updater.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -34,6 +35,8 @@ if (!app.requestSingleInstanceLock()) {
   let registeredTranslationShortcut
   let screenTranslator
   let autoPull
+  let appUpdates
+  let quitting = false
   const pullingFolders = new Set()
   let floatingLauncher
   let recentDocuments = []
@@ -49,6 +52,7 @@ if (!app.requestSingleInstanceLock()) {
     launcherVisible: true,
     startAtLogin: true,
     autoPull: true,
+    autoUpdate: true,
     launcherSize: null,
     launcherPosition: null
   }
@@ -88,6 +92,7 @@ if (!app.requestSingleInstanceLock()) {
         launcherVisible: config.settings?.launcherVisible !== false,
         startAtLogin: config.settings?.startAtLogin !== false,
         autoPull: config.settings?.autoPull !== false,
+        autoUpdate: config.settings?.autoUpdate !== false,
         launcherSize: Number.isFinite(config.settings?.launcherSize?.width) && Number.isFinite(config.settings?.launcherSize?.height)
           ? { width: Math.max(320, config.settings.launcherSize.width), height: Math.max(360, config.settings.launcherSize.height) } : null,
         launcherPosition: Number.isFinite(config.settings?.launcherPosition?.x) && Number.isFinite(config.settings?.launcherPosition?.y)
@@ -98,7 +103,7 @@ if (!app.requestSingleInstanceLock()) {
         typeof file?.folderPath === 'string' && typeof file?.relativePath === 'string' && Number.isFinite(file?.lastOpened)).slice(0, 30) : []
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true, autoUpdate: true }
       recentDocuments = []
       lastAutoPushDate = null
     }
@@ -539,6 +544,7 @@ if (!app.requestSingleInstanceLock()) {
     settingsWindow.webContents.once('did-finish-load', () => {
       settingsWindow.webContents.send('settings:state', {
         ...settings,
+        appUpdate: appUpdates?.state(),
         effectiveLanguage: effectiveLocale()
       })
     })
@@ -552,6 +558,20 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function registerSettingsHandlers() {
+    ipcMain.handle('settings:check-update', event => {
+      if (event.sender !== settingsWindow?.webContents) return
+      return appUpdates?.check()
+    })
+    ipcMain.handle('settings:install-update', event => {
+      if (event.sender !== settingsWindow?.webContents) return false
+      return restartForUpdate()
+    })
+    ipcMain.handle('settings:set-auto-update', (event, enabled) => {
+      if (event.sender !== settingsWindow?.webContents || typeof enabled !== 'boolean') return { success: false }
+      const previous = settings.autoUpdate
+      try { settings.autoUpdate = enabled; saveFolders(); if (enabled) void appUpdates?.check(); return { success: true, enabled } }
+      catch (error) { settings.autoUpdate = previous; return { success: false, enabled: previous, message: error.message } }
+    })
     ipcMain.handle('settings:set-auto-pull', (event, enabled) => {
       if (event.sender !== settingsWindow?.webContents || typeof enabled !== 'boolean') return { success: false }
       const previous = settings.autoPull
@@ -818,10 +838,73 @@ if (!app.requestSingleInstanceLock()) {
   }
 
   function buildTrayMenu() {
+    const updateState = appUpdates?.state()
+    const ready = updateState?.status === 'ready'
     return Menu.buildFromTemplate([
       { label: tr('menu.settings'), click: showSettings },
-      { label: tr(floatingLauncher?.isVisible() !== false ? 'menu.hideBall' : 'menu.showBall'), click: () => floatingLauncher?.setVisible(!floatingLauncher.isVisible()) }
+      { label: tr(floatingLauncher?.isVisible() !== false ? 'menu.hideBall' : 'menu.showBall'), click: () => floatingLauncher?.setVisible(!floatingLauncher.isVisible()) },
+      { label: tr(ready ? 'update.restart' : updateState?.status === 'checking' ? 'update.checking' : updateState?.status === 'downloading' ? 'update.downloading' : 'update.check'),
+        enabled: Boolean(updateState?.supported) && !['checking', 'downloading', 'installing'].includes(updateState?.status),
+        click: () => ready ? void restartForUpdate() : void appUpdates?.check() },
+      { type: 'separator' },
+      { label: tr('menu.quit'), click: () => void requestQuit() }
     ])
+  }
+
+  async function closeDocuments() {
+    for (const window of [...previewWindows.values()]) {
+      if (window.isDestroyed()) continue
+      const contents = window.webContents
+      const closed = await new Promise(resolve => {
+        const finish = value => { window.removeListener('closed', onClosed); contents.removeListener('will-prevent-unload', onBlocked); resolve(value) }
+        const onClosed = () => finish(true)
+        const onBlocked = () => finish(false)
+        window.once('closed', onClosed)
+        contents.once('will-prevent-unload', onBlocked)
+        window.close()
+      })
+      if (!closed) { window.show(); window.focus(); return false }
+    }
+    return true
+  }
+
+  async function requestQuit(install = false) {
+    if (quitting) return false
+    if (install && appUpdates?.state().status !== 'ready') return false
+    if (pushingFolders.size || pullingFolders.size || linkingFolders.size || documentMutations.size) {
+      showToast(tr('menu.quit'), tr('launcher.busy'), 'error')
+      return false
+    }
+    quitting = true
+    try {
+      if (!await closeDocuments()) { showToast(tr('menu.quit'), tr('launcher.closeDocument'), 'error'); return false }
+      // A scheduled sync may have started while editors were closing.
+      if (pushingFolders.size || pullingFolders.size || linkingFolders.size || documentMutations.size) {
+        showToast(tr('menu.quit'), tr('launcher.busy'), 'error'); return false
+      }
+      if (install) return appUpdates.install()
+      app.quit()
+      return true
+    } finally { quitting = false }
+  }
+
+  function restartForUpdate() { return requestQuit(true) }
+
+  async function initializeAppUpdates() {
+    const options = {
+      currentVersion: app.getVersion(), enabled: () => settings.autoUpdate,
+      changed: state => { refreshTrayMenu(); settingsWindow?.webContents.send('settings:app-update', state) },
+      ready: state => showToast(tr('update.readyTitle'), tr('update.readyMessage', { version: state.availableVersion }), 'success', 10000)
+    }
+    try {
+      appUpdates = app.isPackaged && process.platform === 'win32'
+        ? await createInstalledAppUpdater(options) : createAppUpdater(options)
+      appUpdates.start()
+      refreshTrayMenu()
+      settingsWindow?.webContents.send('settings:app-update', appUpdates.state())
+    } catch {
+      showToast(tr('update.failed'), tr('update.failedMessage'), 'error')
+    }
   }
   function refreshTrayMenu() {
     tray?.setContextMenu(buildTrayMenu())
@@ -865,7 +948,7 @@ if (!app.requestSingleInstanceLock()) {
     if (name === 'text-translate') return screenTranslator?.openTextWindow()
     if (name === 'screen-translate') return screenTranslator?.start()
     if (name === 'settings') return showSettings()
-    if (name === 'quit') return app.quit()
+    if (name === 'quit') return requestQuit()
     const folder = folders.find(folder => folder.path === folderPath)
     if (!folder) throw new Error(tr('folder.missing'))
     if (name === 'preview') return showPreviewPicker(folder)
@@ -958,6 +1041,7 @@ if (!app.requestSingleInstanceLock()) {
     }
 
     const localApi = createLocalApi({
+      getAppStatus: () => ({ version: app.getVersion(), channel: 'stable', updates: appUpdates?.state() }),
       getFolders: () => folders,
       command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
       busyFolders: linkingFolders,
@@ -969,7 +1053,7 @@ if (!app.requestSingleInstanceLock()) {
         try { saveFolders() } catch (error) { folder.repo = previous; throw error }
       }
     })
-    controlServer = net.createServer(socket => attachControlSocket(socket, localApi, () => app.quit()))
+    controlServer = net.createServer(socket => attachControlSocket(socket, localApi, () => void requestQuit()))
     controlServer.listen(controlSocket)
 
     const iconFile = process.platform === 'win32' ? 'tray.ico' : 'tray.png'
@@ -997,6 +1081,7 @@ if (!app.requestSingleInstanceLock()) {
     })
     autoPull.start()
     refreshTrayMenu()
+    void initializeAppUpdates()
     applyStartup(settings.startAtLogin)
     runDailyPush()
     autoPushTimer = setInterval(runDailyPush, 60 * 1000)
@@ -1011,6 +1096,7 @@ if (!app.requestSingleInstanceLock()) {
   })
 
   app.on('before-quit', () => {
+    appUpdates?.dispose()
     autoPull?.dispose()
     clearInterval(autoPushTimer)
     globalShortcut.unregisterAll()

@@ -3,6 +3,7 @@ import path from 'node:path'
 
 const methods = {
   'api.describe': { description: 'Describe the local API.', params: {} },
+  'app.status': { description: 'Read the running app version and stable update channel status.', params: {} },
   'folders.list': { description: 'List folders already added to Floade and their repository links.', params: {} },
   'repositories.list': { description: 'List writable private GitHub repositories. Use owner for an organization; inspect possiblyTruncated before assuming a complete list.', params: { owner: 'optional GitHub account or organization', limit: 'optional integer, 1–1000; default 100' } },
   'folders.link': { description: 'Link an existing Floade folder to an existing writable private GitHub repository. Saves the link without committing or pushing.', params: { path: 'required absolute folder path from folders.list', repo: 'required owner/repo', replace: 'optional boolean; true to change an existing link' } },
@@ -11,7 +12,7 @@ const writable = permission => ['ADMIN', 'MAINTAIN', 'WRITE'].includes(permissio
 const normalizedPath = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
 function fail(code, message, details = {}) { throw Object.assign(new Error(message), { apiCode: code, details }) }
 
-export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false }) {
+export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false, getAppStatus = () => ({}) }) {
   const isBusy = folderPath => busyFolders.has(folderPath) || isPushing(folderPath)
   async function github(args) {
     try { return await command('gh', args) } catch (error) {
@@ -24,6 +25,7 @@ export function createLocalApi({ getFolders, command, saveLink, refresh, busyFol
   function findFolder(folderPath) { return getFolders().find(folder => normalizedPath(folder.path) === normalizedPath(folderPath)) }
   async function dispatch(method, params) {
     if (method === 'api.describe') return { apiVersion: 1, transport: 'newline-delimited JSON over local control pipe', methods }
+    if (method === 'app.status') return getAppStatus()
     if (method === 'folders.list') return { folders: getFolders().map(folder => ({
       path: folder.path, repo: folder.repo, exists: fs.existsSync(folder.path), busy: isBusy(folder.path)
     })) }

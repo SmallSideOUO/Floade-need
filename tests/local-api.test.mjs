@@ -35,7 +35,8 @@ async function fixture(t) {
 
 test('API discovers capabilities, lists registered folders and writable private repositories', async t => {
   const f = await fixture(t)
-  assert.deepEqual(Object.keys((await f.api({ method: 'api.describe' })).result.methods), ['api.describe', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.deepEqual(Object.keys((await f.api({ method: 'api.describe' })).result.methods), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.deepEqual((await f.api({ method: 'app.status' })).result, {})
   assert.equal((await f.api({ method: 'communication.send', params: { text: 'retired client' } })).error.code, 'METHOD_NOT_FOUND')
   assert.equal(f.calls.length, 0, 'retired methods never contact GitHub')
   assert.deepEqual((await f.api({ method: 'folders.list' })).result.folders, [{ path: f.directory, repo: null, exists: true, busy: false }])

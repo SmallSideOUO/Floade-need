@@ -1,6 +1,8 @@
 (() => {
   const messages = {
     en: {
+      'settings.appUpdates': 'Floade app updates', 'settings.appUpdatesDescription': 'Automatically check and download stable releases. Choose when to restart and install.',
+      'update.check': 'Check for app updates', 'update.restart': 'Restart and update', 'update.version': 'Version {version} · Stable channel', 'update.idle': 'Checks automatically at startup and every six hours.', 'update.checking': 'Checking for app updates…', 'update.downloading': 'Downloading {version}… {percent}%', 'update.current': 'Floade is up to date.', 'update.ready': 'Version {version} is ready to install.', 'update.installing': 'Restarting to install the update…', 'update.error': 'Could not update Floade. Check your connection and retry.', 'update.unsupported': 'App updates are available in the installed Windows version.',
       "launcher.pull": "Update",
       "pull.checking": "Checking for updates…",
       "pull.updated": "Received latest changes",
@@ -37,6 +39,8 @@
       'language.zh-TW': 'Traditional Chinese', 'language.zh-CN': 'Simplified Chinese', 'language.en': 'English', 'language.ja': 'Japanese', 'language.ko': 'Korean', 'language.fr': 'French', 'language.de': 'German', 'language.es': 'Spanish', 'language.pt': 'Portuguese', 'language.it': 'Italian', 'language.ru': 'Russian', 'language.vi': 'Vietnamese', 'language.th': 'Thai', 'language.id': 'Indonesian'
     },
     'zh-TW': {
+      'settings.appUpdates': 'Floade 程式更新', 'settings.appUpdatesDescription': '自動檢查及下載穩定版，準備好後由你選擇重新啟動並安裝。',
+      'update.check': '檢查程式更新', 'update.restart': '重新啟動並更新', 'update.version': '版本 {version} · 穩定版通道', 'update.idle': '啟動後及每六小時自動檢查。', 'update.checking': '正在檢查程式更新…', 'update.downloading': '正在下載 {version}… {percent}%', 'update.current': 'Floade 已是最新版本。', 'update.ready': '{version} 版已準備好，可重新啟動安裝。', 'update.installing': '正在重新啟動並安裝更新…', 'update.error': '無法更新 Floade，請確認網路後重試。', 'update.unsupported': '程式更新功能僅適用 Windows 安裝版。',
       "launcher.pull": "更新",
       "pull.checking": "正在檢查更新…",
       "pull.updated": "已接收最新修改",

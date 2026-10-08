@@ -4,7 +4,7 @@
 
 Floade is a tiny system-tray app that links local folders to private GitHub repositories and pushes every local change in one click.
 
-Launch it from the Windows Start menu or run `floade`. A small black floating ball with a breathing white light opens the Floade panel on hover. The tray menu contains only Settings and Show/Hide floating ball. AI tools link repositories through the local API.
+Launch it from the Windows Start menu or run `floade`. A small black floating ball with a breathing white light opens the Floade panel on hover. The tray menu offers Settings, Show/Hide floating ball, app updates and Quit. AI tools link repositories through the local API.
 
 ## Why I built Floade
 
@@ -116,7 +116,13 @@ Hover over the floating ball, or click it to focus the panel:
 2. Ask your local AI assistant to link the folder to your private GitHub repository using the [Floade local API](docs/local-api.md). Existing links are preserved. First-time GitHub access uses `gh auth login --hostname github.com --web`.
 3. Select **Push** on its folder card.
 
-The tray's right-click menu offers only **Settings** and **Show/Hide floating ball**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. Use **Quit** at the bottom of the panel or `floade stop` to exit.
+The tray's right-click menu offers **Settings**, **Show/Hide floating ball**, **Check for app updates** and **Quit**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. You can also use **Quit** at the bottom of the panel or `floade stop` to exit. Quit saves open documents first; a file conflict or active folder operation pauses the quit.
+
+### App updates
+
+The installed Windows app checks this repository's GitHub Releases 30 seconds after startup and every six hours, and downloads stable releases automatically. Settings shows the installed version, channel, download progress, a manual check button and an automatic-update toggle. When a download is ready, choose **Restart and update** from Settings or the tray. Open documents are saved before the installer runs; unresolved conflicts or active sync operations pause the restart. Updates never install during normal quit or Windows shutdown. The npm/source version does not update itself.
+
+Versions before 0.1.18 need one manual installation of 0.1.18 or newer to enable the app update channel. Future releases include the EXE, blockmap and `latest.yml`; see [Releasing](docs/releasing.md).
 
 The panel's top section lists recently opened documents. Select **+ File** (`＋文件`) on a folder card to create and open a new Markdown document. Hover over a document row to reveal its **Rename** and **Delete** buttons. Names receive a `.md` extension automatically, and existing files are never overwritten. Delete asks for confirmation and moves the document to the Recycle Bin. An open document is saved before renaming or deleting; a conflicting draft blocks the operation until you resolve it. Drag a panel edge or its bottom-right grip to resize it; the size is remembered across restarts.
 

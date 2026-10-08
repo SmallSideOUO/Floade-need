@@ -5,6 +5,17 @@ const closeButton = document.querySelector('#close')
 const startupInput = document.querySelector('#start-at-login')
 const modifierKeys = new Set(['CommandOrControl', 'Command', 'Alt', 'Shift'])
 const t = (key, variables) => window.floadeI18n.t(key, variables)
+let appUpdateState
+function renderAppUpdate(state = appUpdateState) {
+  if (!state) return
+  appUpdateState = state
+  document.querySelector('#app-version').textContent = t('update.version', { version: state.currentVersion })
+  document.querySelector('#app-update-status').textContent = t(`update.${state.status}`, { version: state.availableVersion, percent: Math.round(state.percent) })
+  document.querySelector('#check-update').disabled = !state.supported || ['checking', 'downloading', 'ready', 'installing'].includes(state.status)
+  document.querySelector('#install-update').hidden = state.status !== 'ready'
+  document.querySelector('#auto-update').disabled = !state.supported
+}
+window.floadeSettings.onAppUpdate(renderAppUpdate)
 
 const recorders = [
   {
@@ -159,6 +170,8 @@ window.floadeSettings.onState(state => {
   languageSelect.value = state.language || 'system'
   startupInput.checked = state.startAtLogin !== false
   document.querySelector('#auto-pull').checked = state.autoPull !== false
+  document.querySelector('#auto-update').checked = state.autoUpdate !== false
+  renderAppUpdate(state.appUpdate)
   updateOpacityDisplay()
   renderAll()
 })
@@ -228,6 +241,7 @@ languageSelect.addEventListener('change', async () => {
   renderAll()
 })
 window.addEventListener('floade-locale-changed', renderAll)
+window.addEventListener('floade-locale-changed', () => renderAppUpdate())
 closeButton.addEventListener('click', () => window.floadeSettings.close())
 startupInput.addEventListener('change', async () => {
   startupInput.disabled = true
@@ -249,3 +263,17 @@ document.querySelector('#auto-pull').addEventListener('change', async event => {
   } finally { input.disabled = false }
 })
 document.querySelector('#open-mobile').addEventListener('click', () => window.floadeSettings.openMobile())
+document.querySelector('#check-update').addEventListener('click', async () => {
+  const state = await window.floadeSettings.checkUpdate()
+  renderAppUpdate(state)
+})
+document.querySelector('#install-update').addEventListener('click', () => window.floadeSettings.installUpdate())
+document.querySelector('#auto-update').addEventListener('change', async event => {
+  const input = event.target
+  input.disabled = true
+  try {
+    const result = await window.floadeSettings.setAutoUpdate(input.checked)
+    input.checked = result.enabled
+    if (!result.success) document.querySelector('#app-update-status').textContent = result.message
+  } finally { input.disabled = !appUpdateState?.supported }
+})

@@ -203,4 +203,6 @@ button:focus-visible { outline: 2px solid #6da8ff; outline-offset: 2px; }
 ::-webkit-scrollbar-thumb { border: 2px solid #111113; border-radius: 999px; background: #3c3c43; }
 
 #auto-pull { width: 18px; height: 18px; accent-color: #78aef8; }
+#auto-update { flex: 0 0 auto; width: 18px; height: 18px; accent-color: #78aef8; }
+#check-update, #install-update { margin-top: 14px; }
 #open-mobile { margin-top: 14px; }

@@ -25,6 +25,13 @@
         </article>
 
         <article class="setting-card">
+          <label class="startup-row"><div class="setting-copy"><h2 data-i18n="settings.appUpdates">Floade 程式更新</h2><p data-i18n="settings.appUpdatesDescription">自動檢查及下載穩定版，準備好後由你選擇重新啟動並安裝。</p></div><input id="auto-update" type="checkbox" data-i18n-aria="settings.appUpdates"></label>
+          <p id="app-version" class="status"></p>
+          <p id="app-update-status" class="status" aria-live="polite"></p>
+          <button id="check-update" class="secondary" type="button" data-i18n="update.check">檢查程式更新</button>
+          <button id="install-update" class="secondary" type="button" data-i18n="update.restart" hidden>重新啟動並更新</button>
+        </article>
+        <article class="setting-card">
           <label class="startup-row"><div class="setting-copy"><h2 data-i18n="settings.autoPull">自動接收更新</h2><p data-i18n="settings.autoPullDescription">每分鐘接收 GitHub 更新。本機有修改或文件開啟中時暫停，不覆蓋草稿。</p></div><input id="auto-pull" type="checkbox" data-i18n-aria="settings.autoPull"></label>
           <p id="pull-status" class="status" aria-live="polite"></p>
         </article>

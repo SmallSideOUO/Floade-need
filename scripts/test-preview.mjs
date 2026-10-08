@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { requestLocalApi } from '../src/local-api-client.mjs'
 import { createFloatingLauncher } from '../src/floating-launcher.mjs'
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const root = process.env.FLOADE_QA_APP_PATH || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'floade-preview-qa-'))
 await fs.mkdir(path.join(temporary, 'profile'))
 app.setPath('userData', path.join(temporary, 'profile'))
@@ -76,7 +76,7 @@ source = source.replace('    autoPushTimer = setInterval(runDailyPush, 60 * 1000
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (true)')
 source = source.replace('app.setLoginItemSettings(', 'globalThis.previewLoginSettings(')
 source = source.replace('  app.whenReady().then(() => {',
-  '  globalThis.previewQA = { loadFolders, openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
+  '  globalThis.previewQA = { loadFolders, openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, requestQuit, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
 const instrumented = path.join(temporary, 'main.mjs')
 await fs.writeFile(instrumented, source)
 
@@ -87,9 +87,11 @@ try {
   const apiSocket = process.platform === 'win32' ? `\\\\.\\pipe\\floade-preview-qa-${process.pid}` : path.join(os.tmpdir(), `floade-preview-qa-${process.pid}.sock`)
   const apiCall = (method, params = {}) => requestLocalApi({ method, params }, { socketPath: apiSocket })
   const folderState = () => previewQA.readLauncherData().folders.find(folder => folder.path === globalThis.previewApiFolder)
-  assert.deepEqual(Object.keys((await apiCall('api.describe')).result.methods), ['api.describe', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.deepEqual(Object.keys((await apiCall('api.describe')).result.methods), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
   assert.equal((await apiCall('communication.status')).error.code, 'METHOD_NOT_FOUND')
-  assert.equal(previewQA.buildTrayMenu().items.length, 2)
+  assert.equal(previewQA.buildTrayMenu().items.length, 5)
+  assert.ok(['Quit', '退出'].includes(previewQA.buildTrayMenu().items.at(-1).label))
+  assert.ok(['Check for app updates', '檢查程式更新'].includes(previewQA.buildTrayMenu().items[2].label))
   assert.equal(previewQA.buildTrayMenu().items.some(item => /Link|連結/.test(item.label)), false)
   assert.equal(folderState().canPush, false, 'an unlinked folder cannot push')
   assert.deepEqual((await apiCall('folders.list')).result.folders, [{ path: globalThis.previewApiFolder, repo: null, exists: true, busy: false }])
@@ -272,7 +274,7 @@ try {
   launcher.panel.close()
   assert.equal(launcher.panel.isDestroyed(), false, 'native close hides the panel so it can still be reopened')
   assert.equal(launcher.panel.__qaShown, false)
-  results.push('tray has exactly Settings and ball visibility; shortcut focuses search, Enter opens a document, and Escape closes the panel')
+  results.push('tray has Settings, ball visibility, app updates and Quit; shortcut focuses search, Enter opens a document, and Escape closes the panel')
   const file = path.join(temporary, 'sample.md')
   await fs.writeFile(file, 'original\n')
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
@@ -365,6 +367,11 @@ try {
   await wait(100)
   assert.equal(window.isDestroyed(), false)
   assert.equal(await fs.readFile(file, 'utf8'), 'concurrent external edit\n')
+  assert.equal(await previewQA.requestQuit(), false)
+  assert.equal(window.isDestroyed(), false)
+  assert.equal(await text(), 'unsaved local draft\n')
+  assert.equal(await fs.readFile(file, 'utf8'), 'concurrent external edit\n')
+  results.push('Quit pauses when an editor has a conflict and preserves its draft and the external file')
   results.push('concurrent edits preserve both disk and draft, including native close')
 
   await run('window.confirm = () => false; document.querySelector("#reload").click()')
@@ -413,6 +420,11 @@ try {
   await runSettings('document.querySelector("#auto-pull").checked = true; document.querySelector("#auto-pull").dispatchEvent(new Event("change"))')
   await until(async () => JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.autoPull === true)
   assert.equal(await runSettings('Boolean(document.querySelector("#open-mobile"))'), true)
+  assert.equal(await runSettings('document.querySelector("#auto-update").checked'), true)
+  assert.equal(await runSettings('document.querySelector("#check-update").disabled'), true)
+  assert.equal(await runSettings('document.querySelector("#install-update").hidden'), true)
+  assert.match(await runSettings('document.querySelector("#app-version").textContent'), /Stable|穩定/)
+  results.push('settings show the stable app update channel and disable installation in source mode')
   results.push('automatic Pull defaults on; the real settings IPC persists disable/enable, and the mobile entry is available')
   startupWindow.close()
   results.push('Windows startup defaults on; the settings checkbox persists disable/enable and registers the executable with background arguments without touching the real startup registry in QA')
@@ -764,6 +776,15 @@ try {
   assert.ok(Math.abs(restoredBounds.height - savedLauncherState.settings.launcherSize.height) <= 2)
   await until(() => restoredLauncher.panel.webContents.executeJavaScript('document.querySelectorAll("#recent-documents .document").length === 2'))
   results.push('loading saved configuration and rebuilding the panel restores its chosen size and recent documents')
+  const nativeQuit = app.quit.bind(app)
+  let quitCalled = false
+  app.quit = () => { quitCalled = true }
+  try {
+    previewQA.buildTrayMenu().items.at(-1).click()
+    await until(() => Promise.resolve(quitCalled))
+    assert.equal(previewQA.previewWindows.size, 0)
+    results.push('tray Quit closes document windows through their save handlers before quitting')
+  } finally { app.quit = nativeQuit }
   console.log(JSON.stringify({ ok: true, checks: results }, null, 2))
   if (process.env.FLOADE_QA_REPORT) await fs.writeFile(process.env.FLOADE_QA_REPORT, JSON.stringify({ ok: true, checks: results }, null, 2))
 } catch (error) {

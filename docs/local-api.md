@@ -36,7 +36,9 @@ Clients print one JSON response; success exits with code 0, failure with code 1.
 4. Call `folders.link` with the absolute path and `owner/repo`.
 5. Inspect `ok`, then confirm the saved link with `folders.list`.
 
-The same link can be requested again safely (`changed=false`). To intentionally replace a different existing link, use `-Replace` in PowerShell or `--replace` in the CLI. An unlinked folder's Push stays disabled until it has a link and changes to push. The Link menu and repository picker have been removed. Preview, Push, and Delete are in the floating panel; the tray contains only Settings and Show/Hide floating ball.
+The same link can be requested again safely (`changed=false`). To intentionally replace a different existing link, use `-Replace` in PowerShell or `--replace` in the CLI. An unlinked folder's Push stays disabled until it has a link and changes to push. The Link menu and repository picker have been removed. Preview, Push, and Delete are in the floating panel; the tray contains Settings, Show/Hide floating ball, app updates and Quit.
+
+`app.status` returns the running app version, the stable app update channel, and update status (`idle`, `checking`, `downloading`, `current`, `ready`, `installing`, `error`, or `unsupported`). It is read-only and does not trigger installation or GitHub requests. `folders.list` describes document repositories; app updates are a separate channel.
 
 Example success:
 
