@@ -29,11 +29,14 @@ globalThis.previewGithubCommand = async (_program, args) => ({ stdout: args[0] =
   : { nameWithOwner: 'demo/notes', isPrivate: true, viewerPermission: 'WRITE' }) })
 // Keep QA windows off the user's desktop so typing cannot enter test fixtures.
 const hideQAWindow = (_event, window) => {
-  window.show = () => { window.__qaShown = true }
-  window.showInactive = () => { window.__qaShown = true }
+  const nativeSkipTaskbar = window.setSkipTaskbar.bind(window)
+  window.setSkipTaskbar = value => { window.__qaSkipTaskbar = value; nativeSkipTaskbar(value) }
+  const simulateShow = () => { window.__qaShown = true; window.__qaSkipTaskbar = false; window.emit('show') }
+  window.show = simulateShow
+  window.showInactive = simulateShow
   const nativeHide = window.hide.bind(window)
   window.hide = () => { window.__qaShown = false; nativeHide() }
-  window.focus = () => {}
+  window.focus = () => { window.__qaSkipTaskbar = false; window.emit('focus') }
   window.webContents.setBackgroundThrottling(false)
 }
 app.on('browser-window-created', hideQAWindow)
@@ -130,6 +133,10 @@ try {
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
   results.push('AI communication UI and APIs are removed; the three remaining quick actions load normally')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)
+  assert.equal(launcher.ball.__qaSkipTaskbar, true)
+  assert.equal(launcher.panel.__qaSkipTaskbar, true)
+  assert.equal(launcher.ball.isFocusable(), false)
+  assert.equal(launcher.panel.isFocusable(), true)
   assert.equal(await runBall('getComputedStyle(document.body).backgroundColor'), 'rgba(0, 0, 0, 0)')
   assert.equal(await runBall('getComputedStyle(document.querySelector(".light")).animationName'), 'breathe')
   const originalBall = launcher.ball.getBounds()
@@ -145,6 +152,7 @@ try {
   globalThis.previewCursor = { x: movedBall.x + 26, y: movedBall.y + 26 }
   await runBall('window.floadeLauncher.hover(true)')
   await until(() => Promise.resolve(launcher.panel.__qaShown === true))
+  assert.equal(launcher.panel.__qaSkipTaskbar, true, 'hover display removes the native taskbar entry')
   await until(() => runPanel('document.querySelectorAll(".folder").length === 1'))
   assert.equal(await runPanel('document.querySelector("[data-action=push]").disabled'), false)
   assert.equal(await runPanel('Boolean(document.querySelector("[data-action=preview]") && document.querySelector("[data-action=remove]") && document.querySelector("#add-folder") && document.querySelector("#text-translate") && document.querySelector("#screen-translate"))'), true)
@@ -164,6 +172,10 @@ try {
   assert.equal(launcher.isVisible(), true)
   previewQA.openFloadeMenu()
   await until(() => runPanel('document.activeElement.id === "search"'))
+  assert.equal(launcher.panel.__qaSkipTaskbar, true, 'keyboard activation keeps the panel off the taskbar')
+  launcher.panel.emit('focus')
+  assert.equal(launcher.panel.__qaSkipTaskbar, true)
+  results.push('ball and panel stay off the taskbar after showing and activation while search remains focusable')
   await until(() => runPanel('document.querySelector("#status").textContent === ""'))
   assert.equal(await runPanel('document.querySelector("header").nextElementSibling.id'), 'recent-section')
   assert.equal(launcher.panel.isResizable(), true)

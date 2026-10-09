@@ -19,14 +19,26 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   const initial = getState().position
   const area = screen.getDisplayNearestPoint(initial || cursor()).workArea
   const position = clampBall(initial || { x: area.x + area.width - 84, y: area.y + Math.round(area.height / 2) }, area)
-  const createWindow = (mode, bounds) => new BrowserWindow({
-    ...bounds, icon: iconPath(), opacity: getOpacity(), frame: false, transparent: true,
-    backgroundColor: '#00000000', hasShadow: false, resizable: mode === 'panel', maximizable: false,
-    ...(mode === 'panel' ? { minWidth: 320, minHeight: 360 } : {}),
-    minimizable: false, fullscreenable: false, alwaysOnTop: true, skipTaskbar: true,
-    focusable: mode === 'panel', show: false,
-    webPreferences: { preload: path.join(appPath, 'src', 'floating-launcher-preload.cjs'), contextIsolation: true, nodeIntegration: false }
-  })
+  const createWindow = (mode, bounds) => {
+    const window = new BrowserWindow({
+      ...bounds, icon: iconPath(), opacity: getOpacity(), frame: false, transparent: true,
+      backgroundColor: '#00000000', hasShadow: false, resizable: mode === 'panel', maximizable: false,
+      ...(mode === 'panel' ? { minWidth: 320, minHeight: 360 } : {}),
+      minimizable: false, fullscreenable: false, alwaysOnTop: true, skipTaskbar: true,
+      focusable: mode === 'panel', show: false,
+      webPreferences: { preload: path.join(appPath, 'src', 'floating-launcher-preload.cjs'), contextIsolation: true, nodeIntegration: false }
+    })
+    // Windows can register a taskbar entry when a window is shown/activated.
+    // Apply this after construction and again after the native show/focus completes.
+    const hideTaskbarEntry = () => {
+      window.setSkipTaskbar(true)
+      setImmediate(() => { if (!window.isDestroyed()) window.setSkipTaskbar(true) })
+    }
+    window.setSkipTaskbar(true)
+    window.on('show', hideTaskbarEntry)
+    window.on('focus', hideTaskbarEntry)
+    return window
+  }
   const ball = createWindow('ball', { ...position, width: ballSize, height: ballSize })
   const panel = createWindow('panel', placePanel(position, area))
   const ballReady = ball.loadFile(path.join(appPath, 'src', 'floating-launcher.html'), { query: { mode: 'ball', lang: getLocale() } })
