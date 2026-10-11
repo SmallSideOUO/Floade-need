@@ -1,0 +1,6 @@
+/data/
+/test-output/
+/tests/profile*/
+*.private
+*.private.bak
+*.writing

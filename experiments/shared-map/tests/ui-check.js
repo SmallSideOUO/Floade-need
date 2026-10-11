@@ -1,0 +1,35 @@
+async page => {
+ const errors=[];page.on('pageerror',e=>errors.push(e.message));const check=(ok,message)=>{if(!ok)throw new Error(message)};
+ await page.locator('.node').first().waitFor();check(await page.locator('.node').count()===10,'Initial nodes lost');check(await page.locator('header button,[data-action="share"],[data-action="draw"]').count()===0,'Removed buttons remain');
+ check(await page.locator('[data-outline-id]').count()===10,'Outline lost nodes');check(await page.locator('[data-outline-id="experiment"]').getAttribute('data-depth')==='4','Big-to-small hierarchy lost');check((await page.locator('#context-trail').textContent()).includes('目前想驗證的事'),'Current context missing');
+ const cb=await page.locator('#canvas').boundingBox(),world=page.locator('[data-id="world"]'),a=await world.boundingBox();
+ await page.mouse.move(cb.x+20,cb.y+20);await page.mouse.down({button:'middle'});await page.mouse.move(cb.x+70,cb.y+55,{steps:8});await page.mouse.up({button:'middle'});const b=await world.boundingBox();
+ check(Math.abs(b.x-a.x-50)<2&&Math.abs(b.y-a.y-35)<2,'Middle pan failed: '+JSON.stringify({a,b}));
+ await page.mouse.move(cb.x+20,cb.y+20);await page.mouse.down();await page.mouse.move(cb.x+65,cb.y+45,{steps:4});await page.mouse.up();const c=await world.boundingBox();check(Math.abs(c.x-b.x)<1,'Left blank pans canvas');
+ await page.mouse.click(cb.x+90,cb.y+125,{button:'right'});check(await page.locator('.node').count()===11,'Right-click create failed');
+ const newNode=page.locator('.node[data-selected="true"]'),id=await newNode.getAttribute('data-id'),created=await newNode.boundingBox();check(Math.abs(created.x+created.width/2-cb.x-90)<2&&Math.abs(created.y+created.height/2-cb.y-125)<2,'Created at wrong location');
+ await page.locator('#parent').selectOption('world');
+ await page.locator('#title').fill('UI_PRIVATE_TITLE_8076');await page.locator('#note').fill('UI_PRIVATE_NOTE_2319');
+ await page.locator('[data-action="focus"]').click();check((await page.locator('#context-trail').textContent()).includes('UI_PRIVATE_TITLE_8076'),'Focus context missing');
+ await page.locator('#shape').selectOption('rounded');await page.locator('#background').evaluate(e=>{e.value='#503f28';e.dispatchEvent(new Event('input',{bubbles:true}))});await page.locator('#text-color').evaluate(e=>{e.value='#ffeecc';e.dispatchEvent(new Event('input',{bubbles:true}))});
+ await page.locator('#width').fill('280');await page.locator('#width').dispatchEvent('change');await page.locator('#height').fill('140');await page.locator('#height').dispatchEvent('change');await page.locator('#opacity').evaluate(e=>{e.value='65';e.dispatchEvent(new Event('input',{bubbles:true}))});
+ const node=page.locator('[data-id="'+id+'"]'),props=await node.evaluate(e=>({fill:getComputedStyle(e.querySelector('.node-shape')).fill,text:getComputedStyle(e.querySelector('strong')).color,opacity:getComputedStyle(e).opacity}));check(props.fill==='rgb(80, 63, 40)'&&props.text==='rgb(255, 238, 204)'&&props.opacity==='0.65','Appearance settings failed');
+ const preResize=await node.boundingBox(),handle=await page.locator('.resize-handle').boundingBox();await page.mouse.move(handle.x+5,handle.y+5);await page.mouse.down();await page.mouse.move(handle.x+35,handle.y+25,{steps:6});await page.mouse.up();const resized=await node.boundingBox();check(resized.width>preResize.width+20&&resized.height>preResize.height+10,'Drag resize failed');
+ const start=await node.boundingBox();await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(start.x+start.width/2+40,start.y+start.height/2+20,{steps:5});await page.mouse.up();const moved=await node.boundingBox();check(Math.abs(moved.x-start.x-40)<2,'Object drag failed');
+ await page.locator('#ai-visibility').selectOption('text');await page.waitForTimeout(200);check((await node.textContent()).includes('UI_PRIVATE_TITLE_8076'),'AI restriction incorrectly changed visual view');
+ await page.locator('#visual-visibility').selectOption('text');check(!(await node.textContent()).includes('UI_PRIVATE_TITLE_8076'),'Visual masking leaks title');check(await page.locator('#title').inputValue()==='[視覺遮蔽]'&&await page.locator('#note').inputValue()==='[視覺遮蔽]','Inspector leaks masked text');
+ await page.locator('#ai-mode').selectOption('open');await page.waitForTimeout(200);check(!(await node.textContent()).includes('UI_PRIVATE_TITLE_8076'),'AI-open unexpectedly revealed visual text');
+ await page.locator('#visual-mode').selectOption('show');check((await node.textContent()).includes('UI_PRIVATE_TITLE_8076'),'Global reveal failed');
+ await page.locator('#ai-mode').selectOption('protected');await page.locator('#ai-visibility').selectOption('object');await page.waitForTimeout(200);
+ await page.locator('#visual-mode').selectOption('selective');await page.locator('#visual-visibility').selectOption('object');check(await node.count()===0,'Visual object hiding failed');
+ await page.locator('#visual-mode').selectOption('mask');check(await node.count()===0,'Global text mask unexpectedly revealed a hidden object');
+ await page.locator('#visual-mode').selectOption('show');check(await node.count()===1,'Global visual-show failed');
+ await page.locator('#visual-visibility').selectOption('text');await page.locator('#ai-visibility').selectOption('text');await page.locator('#visual-mode').selectOption('selective');await page.waitForTimeout(200);
+ await page.reload();await page.locator('.node').first().waitFor();check(!(await page.locator('[data-id="'+id+'"]').textContent()).includes('UI_PRIVATE_TITLE_8076'),'Reload lost visual privacy');
+ const state=await page.evaluate(()=>window.mapStore.load()),saved=state.graph.nodes.find(n=>n.id===id);check(saved.aiVisibility==='text'&&saved.visualVisibility==='text'&&saved.background==='#503f28'&&saved.opacity===.65,'Reload lost independent settings');
+ await page.locator('[data-id="'+id+'"]').click();check(await page.locator('#title').isDisabled(),'Masked title should be disabled');check(errors.length===0,'Runtime errors: '+errors.join('; '));
+ check(!(await page.locator('body').innerText()).includes('UI_PRIVATE_TITLE_8076'),'Outline, relation or breadcrumb leaked masked text');check(saved.parentId==='world','Parent did not persist');check(await page.locator('#parent option[value="'+id+'"]').count()===0,'Self-parent allowed');
+ const output=decodeURIComponent(new URL(page.url()).pathname).replace(/^\/(?=[A-Za-z]:)/,'').replace(/\/index.html$/,'/test-output/ui.png');
+ await page.screenshot({path:output});
+ return {passed:true,createdId:id,checks:['big-to-small outline','context breadcrumb','editable parents','no self-parent','no top buttons','middle pan','left object drag','right-click location','colors','size inputs','resize handle','opacity','AI/visual independent','whole object hiding','masked outline and inspector','encrypted persistence reload']};
+}

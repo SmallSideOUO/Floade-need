@@ -23,6 +23,8 @@
     "floade": "bin/floade.mjs"
   },
   "scripts": {
+    "experiment:map": "electron experiments/shared-map/main.cjs",
+    "test:map": "node --test experiments/shared-map/tests/*.test.cjs",
     "start": "node bin/floade.mjs",
     "start:foreground": "electron . --foreground",
     "test": "node --test tests/*.test.mjs",

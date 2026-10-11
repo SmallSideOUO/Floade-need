@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "current": "experiment",
+  "nodes": [
+    {"id":"world","title":"想帶來什麼改變？","note":"這是一張示範地圖。內容可以模糊、留白，也可以隨發現改變。","shape":"rounded","x":-450,"y":-220},
+    {"id":"product","title":"做一個有價值的產品","note":"讓更具體的選擇保有上層脈絡。","shape":"rounded","x":-120,"y":-100,"parentId":"world"},
+    {"id":"happy","title":"做的過程要開心","note":"這也是選擇產品與方法的條件。","shape":"ellipse","x":180,"y":-120,"parentId":"product"},
+    {"id":"quality","title":"產品品質","note":"水準如何、依什麼條件判斷，可以逐步釐清。","shape":"rounded","x":-200,"y":140,"parentId":"happy"},
+    {"id":"experiment","title":"目前想驗證的事","note":"先做一個小實驗，再決定往哪裡走。","mark":"尚待驗證","shape":"ellipse","x":40,"y":360,"parentId":"quality"},
+    {"id":"evidence","title":"先前的結果","note":"保留結果成立的條件；新情況未必能直接沿用。","mark":"有條件的證據","shape":"rounded","x":-440,"y":370,"parentId":"quality"},
+    {"id":"methods","title":"有哪些方法可選？","note":"成效、成本、適用需求可以互相影響。","shape":"ellipse","x":310,"y":180,"parentId":"happy"},
+    {"id":"cost","title":"成本與取捨","note":"可以影響方法，也可以影響產品。","shape":"ellipse","x":550,"y":350,"parentId":"methods"},
+    {"id":"funding","title":"資源與資金","note":"另一條分支，隨時可以回來探索。","shape":"rounded","x":510,"y":-160,"parentId":"product"},
+    {"id":"unknown","title":"突然想到的可能性","note":"不用一開始就知道放在哪裡。","shape":"ellipse","x":-600,"y":80}
+  ],
+  "edges": [
+    {"id":"evidence-condition","from":"evidence","to":"experiment","label":"條件是否相同？"},
+    {"id":"cost-resources","from":"cost","to":"funding","label":"影響取捨"},
+    {"id":"new-route","from":"unknown","to":"methods","label":"也許可試"}
+  ]
+}
