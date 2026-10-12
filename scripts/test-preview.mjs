@@ -17,6 +17,8 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const loginWrites = []
+const workMapRequests = []
+globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
 const originalFetch = globalThis.fetch
 globalThis.previewApiFolder = path.join(temporary, 'Notes')
@@ -78,6 +80,7 @@ source = source.replace('    runDailyPush()', '    // Daily remote pushes disabl
 source = source.replace('    autoPushTimer = setInterval(runDailyPush, 60 * 1000)', '    // Daily timer disabled in QA')
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (true)')
 source = source.replace('app.setLoginItemSettings(', 'globalThis.previewLoginSettings(')
+source = source.replace('return openWorkMap({', 'return globalThis.previewOpenWorkMap({')
 source = source.replace('  app.whenReady().then(() => {',
   '  globalThis.previewQA = { loadFolders, openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, requestQuit, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
 const instrumented = path.join(temporary, 'main.mjs')
@@ -128,10 +131,16 @@ try {
   const runPanel = code => launcher.panel.webContents.executeJavaScript(code)
   await until(() => runBall('Boolean(window.floadeLauncher)'))
   await until(() => runPanel('Boolean(window.floadeLauncher)'))
-  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 3)
+  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 4)
+  assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'work-map')
+  await until(() => runPanel('document.querySelector("#work-map img").naturalWidth > 0'))
+  await runPanel('document.querySelector("#work-map").click()')
+  await until(() => Promise.resolve(workMapRequests.length === 1))
+  assert.equal(workMapRequests[0].appPath, root)
+  results.push('Work Map appears to the right of screen translation, loads the Floade logo and invokes the main-process launch action')
   assert.equal(await runPanel('Boolean(document.querySelector("#communication"))'), false)
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
-  results.push('AI communication UI and APIs are removed; the three remaining quick actions load normally')
+  results.push('AI communication UI and APIs remain removed; the four quick actions load normally')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)
   assert.equal(launcher.ball.__qaSkipTaskbar, true)
   assert.equal(launcher.panel.__qaSkipTaskbar, true)

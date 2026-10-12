@@ -16,6 +16,7 @@ import { createLauncherFile, renameLauncherFile, managedDocumentPath } from './l
 import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
 import { createAutoPull } from './pull-folder.mjs'
 import { createAppUpdater, createInstalledAppUpdater } from './app-updater.mjs'
+import { openWorkMap } from './work-map.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -23,7 +24,9 @@ const controlSocket = process.platform === 'win32'
   ? '\\\\.\\pipe\\floade-local-data-control'
   : path.join(os.tmpdir(), 'floade-local-data-control.sock')
 
-if (!app.requestSingleInstanceLock()) {
+if (process.argv.includes('--work-map')) {
+  await import('../experiments/shared-map/runtime.cjs')
+} else if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
   let tray
@@ -947,6 +950,7 @@ if (!app.requestSingleInstanceLock()) {
     if (name === 'add-folder') return addFolder()
     if (name === 'text-translate') return screenTranslator?.openTextWindow()
     if (name === 'screen-translate') return screenTranslator?.start()
+    if (name === 'work-map') return openWorkMap({ appPath: app.getAppPath(), isPackaged: app.isPackaged })
     if (name === 'settings') return showSettings()
     if (name === 'quit') return requestQuit()
     const folder = folders.find(folder => folder.path === folderPath)

@@ -1,8 +1,9 @@
 'use strict';
 const fs=require('node:fs'),path=require('node:path');
+const {profilePath}=require('./profile.cjs');
 async function main(){
   const args=process.argv.slice(2),profileArg=args.find(arg=>arg.startsWith('--profile='));
-  const profile=profileArg?path.resolve(profileArg.slice(10)):path.join(__dirname,'data');
+  const profile=profileArg?path.resolve(profileArg.slice(10)):profilePath();
   const [command,input,output]=args.filter(arg=>!arg.startsWith('--profile='));
   if(!['describe','graph','history','apply','screenshot'].includes(command))throw new Error('Usage: node client.cjs describe|graph|history|apply request.json|screenshot region.json output.png [--profile=<directory>]');
   const runtime=JSON.parse(fs.readFileSync(path.join(profile,'api-runtime.json'),'utf8'));

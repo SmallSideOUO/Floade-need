@@ -1,6 +1,6 @@
 {
   "name": "floade-local-data",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "private": true,
   "type": "module",
   "description": "Link local folders to private GitHub repositories and push from the system tray.",
@@ -57,6 +57,13 @@
       "assets/**/*",
       "!assets/logo-youtube-black.png",
       "src/**/*",
+      "experiments/shared-map/*.cjs",
+      "experiments/shared-map/*.html",
+      "experiments/shared-map/*.js",
+      "experiments/shared-map/*.css",
+      "experiments/shared-map/seed.json",
+      "experiments/shared-map/API.md",
+      "experiments/shared-map/AGENTS.md",
       "package.json",
       "!node_modules/electron-runtime/**/*"
     ],

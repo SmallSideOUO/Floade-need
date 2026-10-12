@@ -3,10 +3,15 @@ const {app,BrowserWindow,ipcMain,nativeTheme,safeStorage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {aiMap}=require('./privacy.cjs'),{applyOrganization}=require('./organization.cjs'),{layout}=require('./hierarchy.cjs'),{materialize}=require('./connections.cjs');
 const {ApiError,applyOperations,createApi}=require('./api.cjs');
+const {profilePath,migrateLegacy}=require('./profile.cjs');
 const profileArg=process.argv.find(a=>a.startsWith('--map-profile='));
 const hiddenTest=Boolean(profileArg&&process.argv.includes('--map-test-hidden'));
-const dataDir=profileArg?path.resolve(profileArg.slice(14)):path.join(__dirname,'data');
-fs.mkdirSync(dataDir,{recursive:true});app.setPath('userData',path.join(dataDir,'profile'));app.setName('共用地圖');nativeTheme.themeSource='dark';
+const dataDir=profileArg?path.resolve(profileArg.slice(14)):profilePath(app.getPath('appData'));
+const iconPath=path.join(__dirname,'..','..','assets',process.platform==='win32'?'tray.ico':'tray.png');
+// Chromium loads the safeStorage key from Local State during startup. Copy it
+// with the encrypted files before changing userData and before app readiness.
+if(!profileArg)migrateLegacy(path.join(__dirname,'data'),dataDir);
+fs.mkdirSync(dataDir,{recursive:true});app.setPath('userData',path.join(dataDir,'profile'));app.setName('Floade Work Map');nativeTheme.themeSource='dark';
 let window,screenshotWindow,state,api,rendererReady=false;
 const pendingFlush=new Map(),auditDir=path.join(dataDir,'ai-history');
 const privatePath=path.join(dataDir,'map.private'),legacyPath=path.join(dataDir,'map.json'),publicPath=path.join(dataDir,'ai-map.json'),runtimePath=path.join(dataDir,'api-runtime.json');
@@ -75,7 +80,8 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   ipcMain.on('map:ready',event=>{trusted(event);rendererReady=true});
   ipcMain.on('map:flushed',(event,{id,error})=>{trusted(event);const pending=pendingFlush.get(id);if(!pending)return;clearTimeout(pending.timeout);pendingFlush.delete(id);if(error)pending.reject(new ApiError(409,error));else pending.resolve()});
   app.whenReady().then(async()=>{
-    load();window=new BrowserWindow({width:1320,height:900,minWidth:800,minHeight:560,show:false,title:'共用地圖',backgroundColor:'#0d0d0f',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!hiddenTest}});
+    if(process.platform==='win32')app.setAppUserModelId('com.smallside.floade.work-map');
+    load();window=new BrowserWindow({width:1320,height:900,minWidth:800,minHeight:560,show:false,title:'Floade Work Map',icon:iconPath,backgroundColor:'#0d0d0f',autoHideMenuBar:true,webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!hiddenTest}});
     window.setMenu(null);window.webContents.setWindowOpenHandler(()=>({action:'deny'}));window.webContents.on('will-navigate',event=>event.preventDefault());
     window.loadFile(path.join(__dirname,'index.html'));window.once('ready-to-show',()=>{if(!hiddenTest){window.show();window.focus()}});
     api=createApi({getState:()=>state,flush,release,change,history,capture});

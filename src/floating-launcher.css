@@ -49,10 +49,11 @@ button:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-thumb { background: #35353d; border-radius: 9px; }
 @media (prefers-reduced-motion: reduce) { .light { animation: none; opacity: .85; } }
-.quick-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin: 0 12px 11px; }
+.quick-actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0 12px 11px; }
 .quick-actions button { display: grid; justify-items: center; gap: 5px; padding: 10px 4px 8px; border: 1px solid #2a2a30; border-radius: 9px; background: #17171a; color: #ceced5; }
 .quick-actions button:hover { background: #25252a; border-color: #44444d; color: #fff; }
 .quick-actions span { font-size: 18px; line-height: 20px; }
+.quick-actions img { display: block; width: 20px; height: 20px; object-fit: contain; }
 .quick-actions small { font-size: 10px; }
 #items { flex: 1; min-height: 0; overflow: auto; padding: 0 10px; }
 #documents { min-height: 0; overflow: visible; padding: 0; }

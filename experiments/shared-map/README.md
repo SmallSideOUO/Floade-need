@@ -1,6 +1,8 @@
-# 共用地圖（實驗）
+# Floade Work Map（實驗）
 
-獨立 Electron 視窗，用來共用會持續改變的思考脈絡。尚未接到 Floade 主體，不在正式安裝包內，沒有傳送給 GPT 的功能。
+獨立 Electron 視窗，用來共用會持續改變的思考脈絡。Floade 面板的「框選翻譯」右邊有 Work Map 入口，安裝包包含此實驗功能；視窗與 AI API 都獨立運行，沒有傳送給 GPT 的功能。重複點入口會切回已開啟的視窗。
+
+預設資料目錄在 Windows 的 `%APPDATA%\Floade\work-map`，以下 `data/` 都指這個資料目錄。開發版與安裝版共用同一份地圖，更新安裝不會覆蓋它。首次從舊獨立版啟動時，會原樣複製專案 `experiments/shared-map/data` 的加密地圖、AI 紀錄與解密所需的 profile 金鑰設定，原檔保留作備份；已有新目錄地圖時不覆蓋。自訂 `--map-profile` 不執行遷移。
 
 在 need 專案根目錄執行 `npm ci`，然後 `npm run experiment:map`。Windows 也可以雙擊本資料夾的 `開啟共用地圖.vbs`，或執行 `Open Map.ps1`。
 

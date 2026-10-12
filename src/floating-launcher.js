@@ -264,7 +264,7 @@ if (isBall) {
   window.floadeLauncher.onFocus(() => { search.focus(); search.select() })
   window.addEventListener('floade-locale-changed', render)
   document.querySelector('#close').addEventListener('click', () => window.floadeLauncher.close())
-  for (const name of ['add-folder', 'text-translate', 'screen-translate', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
+  for (const name of ['add-folder', 'text-translate', 'screen-translate', 'work-map', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
   window.addEventListener('keydown', event => {
     if (event.isComposing) return
     if (fileDialog.open) return
