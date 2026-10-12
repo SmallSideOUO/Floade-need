@@ -71,6 +71,8 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     let endpoint
     try { endpoint = JSON.parse(fs.readFileSync(controlFile, 'utf8')) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine is not running.') }
     if (!Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535 || typeof endpoint.token !== 'string') fail('REMOTE_NOT_RUNNING', 'Invalid remote engine endpoint.')
+    if (!Number.isInteger(endpoint.pid) || endpoint.pid <= 0) fail('REMOTE_NOT_RUNNING', 'Invalid remote engine process.')
+    try { process.kill(endpoint.pid, 0) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine process has stopped.') }
     let response
     try {
       response = await fetch(`http://127.0.0.1:${endpoint.port}/command`, {
@@ -102,7 +104,10 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
         }
         verified = true
       }
-      const child = launch(executable, ['--floade-managed'], { cwd: runtimeDirectory, detached: true, stdio: 'ignore', windowsHide: true,
+      const system = process.platform === 'win32' && !engineCall ? await windowsService.status() : null
+      if (system?.installed && !system.launchExecutable) fail('REMOTE_SERVICE_UPDATE_REQUIRED', 'Update the Windows system service to match this Floade version.')
+      const launchExecutable = system?.launchExecutable || executable
+      const child = launch(launchExecutable, ['--floade-managed'], { cwd: path.dirname(launchExecutable), detached: true, stdio: 'ignore', windowsHide: true,
         env: { ...process.env, FLOADE_RUSTDESK_TEST_PROFILE: '0', FLOADE_RUSTDESK_LOW_LATENCY: '1', RUST_LOG: 'info,webrtc=error,webrtc_ice=error,webrtc_sctp=error,turn=error' } })
       let launchError
       child.once('error', () => { launchError = true })
@@ -121,8 +126,9 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
   async function dispatch(method, p = {}) {
     if (method === 'remote.service.status') return windowsService.status()
     if (method === 'remote.service.install') {
-      const status = await start()
-      if (status.windows?.length || status.connection?.video_conn_count > 0) fail('REMOTE_BUSY', 'Close remote sessions before installing the system service.')
+      let status
+      try { status = await call('status') } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
+      if (status?.windows?.length || status?.connection?.video_conn_count > 0) fail('REMOTE_BUSY', 'Close remote sessions before installing the system service.')
       return windowsService.install()
     }
     if (method === 'remote.access.get') { await start(); return call('accessGet') }

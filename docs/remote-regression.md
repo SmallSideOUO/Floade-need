@@ -44,7 +44,7 @@ GPU preferences and FPS targets are requests, not performance guarantees. Direct
 
 The managed engine stays online after its final remote window hides. Status reports active session windows, so inactive reusable windows do not block the updater. Direct connection remains the default and the requested profile on both tested devices. Earlier TCP/WebRTC interruptions coincided with a user who moved, suspended or disconnected the laptop; those runs do not establish a transport defect. Relay also delivered sustained H.264 frames, but its roughly 400–500 ms shared-channel delay is not an input-to-display measurement.
 
-## 0.1.23 regression surface
+## 0.1.24 regression surface
 
 - `src/remote-service.mjs`: six additive API methods for incoming full-access policy and Windows service installation/status. The installation path checks active incoming/outgoing sessions; existing connection, credential, display and updater paths are retained.
 - `src/remote.html`, `src/remote.js`: manual allowlist and service controls in the existing remote settings page. Existing connection form and remembered passwords remain unchanged.
@@ -53,3 +53,5 @@ The managed engine stays online after its final remote window hides. Status repo
 - Package versions/source pin and the two remote documents change to ship and document the exact implementation. No Work Map, safe-Push, private repository data, legacy RustDesk service or submodule revision changes.
 
 Two API regressions cover grant/update/revoke/disable without authentication mutation and service status/active-session refusal. Live native checks must additionally verify effective ID policy, persistence, password-authenticated direct connection and actual service state. A pending UAC prompt or non-elevated token cannot be reported as successful system-service installation.
+
+Service integration additionally changes `src/core_main.rs` with Floade-only identity/import hooks and adds `src/platform/windows/floade.rs` (one module declaration in `windows.rs`). Existing Floade IDs are retained in the SYSTEM profile; the Floade installer imports complete identity/key/password and preferences without the upstream timestamp gate, which rejects freshly modified portable configurations. The original RustDesk importer remains unchanged. The app launches the hash-matching protected executable after service installation and refuses a mismatched service until updated; dead capability-file PIDs are rejected before sending commands. These changes are required to keep the same device identity and password after enabling the requested system service.

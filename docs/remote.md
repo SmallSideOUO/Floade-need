@@ -35,7 +35,7 @@ Copy the resulting branded-windows-x64 folder to vendor/remote/windows-x64, then
 
 TCP, UDP and WebRTC direct-connection options are available in manual settings and remote.settings.update (tcpPunch, udpPunch, webrtc). Display/transport changes take effect on new connections. If an established direct connection resets, choose forceRelay or disable the failing punch route; an already established session is not silently migrated. Performance probes are not input-to-display measurements.
 
-## Full access and Windows service (0.1.23)
+## Full access and Windows service (0.1.24)
 
 The remote settings page exposes the same operations as the local API:
 

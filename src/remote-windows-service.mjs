@@ -24,6 +24,7 @@ export function createRemoteWindowsService(runtimeDirectory) {
       } catch { /* Incomplete installations are never advertised as ready. */ }
     }
     return { supported: true, ...native, protectedPath, binaryMatchesBundle,
+      launchExecutable: protectedPath && binaryMatchesBundle ? expected : null,
       ready: Boolean(native.running && native.startMode === 'Auto' && native.account === 'LocalSystem' && protectedPath && binaryMatchesBundle),
       installing, lastExitCode, consent: 'Windows UAC approval is required for installation; no OS consent bypass',
       capabilities: ['administrator applications', 'UAC secure desktop', 'Windows login screen'],
