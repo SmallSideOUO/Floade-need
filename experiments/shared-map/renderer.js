@@ -2,9 +2,9 @@
 (async () => {
   const $ = selector => document.querySelector(selector);
   const canvas = $('#canvas'), layer = $('#nodes'), lines = $('#lines'), panelLayer = $('#panels'), menu = $('#context-menu');
-  const {lineage, canParent, outline, layout} = window.mapHierarchy;
+  const {route, ports, style, removeEdge, removeNode} = window.mapConnections;
   let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
-  let selected = null, source = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0;
+  let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0;
   const panels = new Map(), revealed = new Set();
   const by = id => graph.nodes.find(node => node.id === id);
   const edgeBy = id => graph.edges.find(edge => edge.id === id);
@@ -33,51 +33,49 @@
     if (node.shape === 'diamond') return 'M 50 2 L 98 50 L 50 98 L 2 50 Z';
     return node.shape === 'rectangle' ? 'M 2 2 H 98 V 98 H 2 Z' : 'M 10 2 H 90 Q 98 2 98 10 V 90 Q 98 98 90 98 H 10 Q 2 98 2 90 V 10 Q 2 2 10 2 Z';
   }
-  function anchor(node, target) {
-    const point = at(node), size = dims(node), cx = point.x, cy = point.y + size.h / 2, dx = target.x - cx, dy = target.y - cy;
-    if (!dx && !dy) return {x: cx, y: cy};
-    let scale;
-    if (node.shape === 'ellipse' || node.shape === 'circle') scale = 1 / Math.sqrt((dx / (size.w * .48)) ** 2 + (dy / (size.h * .48)) ** 2);
-    else if (node.shape === 'diamond') scale = 1 / (Math.abs(dx) / (size.w * .48) + Math.abs(dy) / (size.h * .48));
-    else scale = Math.min(dx ? size.w * .48 / Math.abs(dx) : Infinity, dy ? size.h * .48 / Math.abs(dy) : Infinity);
-    return {x: cx + dx * scale, y: cy + dy * scale};
-  }
+  let routeKey = '', routeCache = new Map();
+  const boxOf = node => { const size = baseSize(node); return {id: node.id, x: node.x - size.w / 2, y: node.y, w: size.w, h: size.h}; };
+  function linkTarget(event) { const node = document.elementFromPoint(event.clientX, event.clientY)?.closest('.node'); return node?.dataset.id || null; }
   function draw() {
-    const bounds = canvas.getBoundingClientRect();
-    lines.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
-    lines.replaceChildren(); layer.replaceChildren();
-    const defs = svg('defs'), arrow = svg('marker', {id: 'context-arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse'});
-    arrow.append(svg('path', {d: 'M 1 1 L 9 5 L 1 9', fill: 'none', stroke: '#78aef8', 'stroke-width': 1.3})); defs.append(arrow); lines.append(defs);
-    const pathIds = new Set(lineage(graph.nodes, selected || graph.current).map(node => node.id));
-    const links = graph.edges.filter(edge => by(edge.to)?.parentId !== edge.from && by(edge.from)?.parentId !== edge.to).map(edge => ({...edge, hierarchy: false}));
-    for (const node of graph.nodes) if (node.parentId && by(node.parentId) && canParent(graph.nodes, node.id, node.parentId)) links.push({from: node.parentId, to: node.id, hierarchy: true});
-    for (const edge of links) {
-      const a = by(edge.from), b = by(edge.to);
-      if (!a || !b || visual(a) === 'object' || visual(b) === 'object') continue;
-      const ac = at(a), bc = at(b); ac.y += dims(a).h / 2; bc.y += dims(b).h / 2;
-      const p = anchor(a, bc), q = anchor(b, ac), mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
-      const active = edge.hierarchy && pathIds.has(a.id) && pathIds.has(b.id);
-      const opened = !edge.hierarchy && panels.has('edge:' + edge.id);
-      const curve = edge.hierarchy ? `M ${p.x} ${p.y} C ${p.x} ${my} ${q.x} ${my} ${q.x} ${q.y}` : `M ${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${q.y} ${q.x} ${q.y}`;
-      const line = svg('path', {d: curve, fill: 'none', stroke: opened || active ? '#78aef8' : edge.hierarchy ? '#64768d' : '#484851', 'stroke-width': active || opened ? 2 : edge.hierarchy ? 1.5 : 1, 'data-kind': edge.hierarchy ? 'context' : 'association'});
-      if (edge.hierarchy) line.setAttribute('marker-end', 'url(#context-arrow)'); else line.setAttribute('stroke-dasharray', '4 5');
-      line.style.opacity = String(Math.min(a.opacity ?? 1, b.opacity ?? 1) * (edge.hierarchy || opened ? 1 : .45)); lines.append(line);
+    const bounds = canvas.getBoundingClientRect(), boxes = graph.nodes.filter(node => visual(node) !== 'object').map(boxOf);
+    const key = JSON.stringify([boxes, graph.edges.map(edge => [edge.id, edge.from, edge.to])]);
+    if (key !== routeKey) {
+      routeKey = key; routeCache = new Map(); const lookup = new Map(boxes.map(box => [box.id, box]));
+      for (const edge of graph.edges) if (lookup.has(edge.from) && lookup.has(edge.to)) routeCache.set(edge.id, route(lookup.get(edge.from), lookup.get(edge.to), boxes));
+    }
+    lines.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`); lines.replaceChildren(); layer.replaceChildren();
+    const drawing = svg('g', {transform: `translate(${view.x} ${view.y}) scale(${view.z})`}); lines.append(drawing);
+    for (const edge of graph.edges) {
+      const result = routeCache.get(edge.id); if (!result) continue;
+      const appearance = style(edge), a = by(edge.from), b = by(edge.to);
+      const line = svg('path', {d: result.d, fill: 'none', stroke: appearance.color, 'stroke-width': appearance.width, 'vector-effect': 'non-scaling-stroke', class: 'connection-line', 'data-edge-id': edge.id, 'data-open': panels.has('edge:' + edge.id)});
+      if (appearance.lineStyle === 'dashed') line.setAttribute('stroke-dasharray', '7 5');
+      line.style.opacity = String(Math.min(a.opacity ?? 1, b.opacity ?? 1)); drawing.append(line);
+      const hit = svg('path', {d: result.d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(14, appearance.width + 10), 'vector-effect': 'non-scaling-stroke', class: 'connection-hit', 'data-edge-id': edge.id, role: 'button', tabindex: 0, 'aria-label': '編輯連線：' + label(a) + ' ↔ ' + label(b)});
+      hit.addEventListener('click', event => { if (event.detail === 0 && !gesture) { openPanel('edge', edge.id); draw(); save(); } });
+      hit.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPanel('edge', edge.id); draw(); save(); } }); drawing.append(hit);
       if (edge.label && view.z >= .65 && visual(a) === 'full' && visual(b) === 'full') {
-        const text = svg('text', {x: mx, y: my - 6, fill: '#9999a5', 'font-size': 11, 'text-anchor': 'middle'}); text.textContent = edge.label; lines.append(text);
+        const middle = result.points[Math.floor(result.points.length / 2)], text = svg('text', {x: middle.x, y: middle.y - 9 / view.z, fill: '#9999a5', 'font-size': 11 / view.z, 'text-anchor': 'middle'}); text.textContent = edge.label; drawing.append(text);
       }
+    }
+    if (gesture?.type === 'link') {
+      const node = by(gesture.node), start = ports(boxOf(node)).find(port => port.side === gesture.port), end = gesture.point;
+      const distance = Math.max(40, Math.hypot(end.x - start.x, end.y - start.y) * .35);
+      const preview = svg('path', {d: `M ${start.x} ${start.y} C ${start.x + start.dx * distance} ${start.y + start.dy * distance} ${end.x} ${end.y} ${end.x} ${end.y}`, fill: 'none', stroke: '#78aef8', 'stroke-width': 2, 'vector-effect': 'non-scaling-stroke', class: 'connection-preview'}); drawing.append(preview);
     }
     for (const node of graph.nodes) {
       if (visual(node) === 'object') continue;
       const point = at(node), size = dims(node), button = document.createElement('button');
       button.type = 'button'; button.className = 'node'; button.dataset.id = node.id;
-      for (const [key, value] of Object.entries({current: node.id === graph.current, selected: node.id === selected, source: node.id === source, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
+      for (const [key, value] of Object.entries({selected: node.id === selected, linking: gesture?.type === 'link' && gesture.node === node.id, linkTarget: gesture?.type === 'link' && gesture.target === node.id && gesture.node !== node.id, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
       button.setAttribute('aria-label', label(node));
       Object.assign(button.style, {left: point.x - size.w / 2 + 'px', top: point.y + 'px', width: size.w + 'px', height: size.h + 'px', color: node.textColor || '#eeeef1', opacity: String(node.opacity ?? 1)});
       const image = svg('svg', {viewBox: '0 0 100 100', preserveAspectRatio: 'none'}), shape = svg('path', {d: shapePath(node), class: 'node-shape'});
-      shape.style.fill = node.background || (node.id === graph.current ? '#222936' : '#17171b'); image.append(shape); button.append(image);
+      shape.style.fill = node.background || '#17171b'; image.append(shape); button.append(image);
       const copy = document.createElement('span'), title = document.createElement('strong'); copy.className = 'node-copy'; copy.style.fontSize = Math.max(9, Math.min(15, 13 * view.z)) + 'px'; title.textContent = label(node); copy.append(title);
-      if (view.z >= .65 && visual(node) === 'full' && (node.mark || node.id === graph.current)) { const mark = document.createElement('small'); mark.textContent = node.id === graph.current ? '手上這件事' : node.mark; copy.append(mark); }
+      if (view.z >= .65 && visual(node) === 'full' && node.mark) { const mark = document.createElement('small'); mark.textContent = node.mark; copy.append(mark); }
       button.append(copy); button.addEventListener('click', event => { if (event.detail === 0) select(node.id); }); layer.append(button);
+      for (const side of ['top', 'right', 'bottom', 'left']) { const port = document.createElement('span'); port.className = 'connection-port'; port.dataset.port = side; port.setAttribute('aria-hidden', 'true'); button.append(port); }
       if (node.id === selected) {
         const handle = document.createElement('button'); handle.className = 'resize-handle'; handle.dataset.resize = node.id; handle.type = 'button'; handle.setAttribute('aria-label', '拖曳調整物件大小'); handle.style.left = point.x + size.w / 2 - 5 + 'px'; handle.style.top = point.y + size.h - 5 + 'px'; layer.append(handle);
       }
@@ -156,7 +154,8 @@
       if (edge) {
         const a = by(edge.from), b = by(edge.to), masked = visual(a) !== 'full' || visual(b) !== 'full';
         panel.element.querySelector('[data-heading]').textContent = label(a) + ' ↔ ' + label(b);
-        setField(panel, 'edgeLabel', masked ? '[視覺遮蔽]' : edge.label || '', masked); continue;
+        setField(panel, 'edgeLabel', masked ? '[視覺遮蔽]' : edge.label || '', masked);
+        const appearance = style(edge); setField(panel, 'edgeColor', appearance.color); setField(panel, 'edgeWidth', appearance.width); setField(panel, 'edgeStyle', appearance.lineStyle); continue;
       }
       const masked = visual(node) !== 'full', size = baseSize(node);
       panel.element.querySelector('[data-heading]').textContent = label(node);
@@ -164,12 +163,6 @@
       panel.element.querySelector('[data-action="reveal"]').hidden = !masked;
       for (const [name, value] of Object.entries({shape: node.shape, background: node.background || '#17171b', textColor: node.textColor || '#eeeef1', width: Math.round(size.w), height: Math.round(size.h), opacity: Math.round((node.opacity ?? 1) * 100), aiVisibility: node.aiVisibility || 'full', visualVisibility: node.visualVisibility || 'full'})) setField(panel, name, value);
       panel.element.querySelector('[data-opacity]').textContent = Math.round((node.opacity ?? 1) * 100) + '%';
-      const options = [{id: '', text: '最外層（沒有上層）'}];
-      for (const {node: item, depth} of outline(graph.nodes.filter(item => visual(item) !== 'object'))) if (canParent(graph.nodes, node.id, item.id)) options.push({id: item.id, text: '　'.repeat(depth) + label(item)});
-      if (node.parentId && !options.some(option => option.id === node.parentId)) options.push({id: node.parentId, text: '已隱藏的上層'});
-      const parent = panel.element.querySelector('[data-field="parentId"]'), signature = JSON.stringify(options);
-      if (parent.dataset.options !== signature) { parent.replaceChildren(); for (const option of options) { const element = document.createElement('option'); element.value = option.id; element.textContent = option.text; parent.append(element); } parent.dataset.options = signature; }
-      setField(panel, 'parentId', node.parentId || '');
       const related = panel.element.querySelector('[data-related]'); related.replaceChildren();
       for (const relation of graph.edges.filter(edge => edge.from === node.id || edge.to === node.id)) {
         const other = by(relation.from === node.id ? relation.to : relation.from); if (visual(other) === 'object') continue;
@@ -181,11 +174,17 @@
     if (panels.get(panel.kind + ':' + panel.id) !== panel) return;
     const field = event.target.closest('[data-field]'); if (!field || field.disabled) return;
     const name = field.dataset.field;
-    if (event.type === 'input' && ['parentId', 'shape', 'aiVisibility', 'visualVisibility', 'width', 'height'].includes(name)) return;
-    if (panel.kind === 'edge') { const edge = edgeBy(panel.id); if (edge && name === 'edgeLabel') edge.label = field.value; draw(); save(); return; }
+    if (event.type === 'input' && ['shape', 'aiVisibility', 'visualVisibility', 'width', 'height', 'edgeWidth'].includes(name)) return;
+    if (panel.kind === 'edge') {
+      const edge = edgeBy(panel.id); if (!edge) return;
+      if (name === 'edgeLabel') edge.label = field.value;
+      if (name === 'edgeColor') edge.color = field.value;
+      if (name === 'edgeStyle') edge.lineStyle = field.value === 'dashed' ? 'dashed' : 'solid';
+      if (name === 'edgeWidth') { const value = Number(field.value); if (!Number.isFinite(value)) return; edge.width = Math.max(.5, Math.min(12, value)); }
+      draw(); save(); return;
+    }
     const node = by(panel.id); if (!node) return;
-    if (name === 'parentId') { if (!canParent(graph.nodes, node.id, field.value)) return; node.parentId = field.value || null; }
-    else if (name === 'width' || name === 'height') { const value = Number(field.value); if (!Number.isFinite(value)) return; node[name] = Math.round(Math.max(name === 'width' ? 70 : 50, Math.min(name === 'width' ? 600 : 500, value))); if (node.shape === 'circle') node.width = node.height = node[name]; }
+    if (name === 'width' || name === 'height') { const value = Number(field.value); if (!Number.isFinite(value)) return; node[name] = Math.round(Math.max(name === 'width' ? 70 : 50, Math.min(name === 'width' ? 600 : 500, value))); if (node.shape === 'circle') node.width = node.height = node[name]; }
     else if (name === 'opacity') node.opacity = Number(field.value) / 100;
     else if (name === 'shape') { node.shape = field.value; delete node.width; delete node.height; }
     else { node[name] = field.value; if (name === 'visualVisibility') revealed.delete(node.id); }
@@ -196,49 +195,39 @@
     if (action === 'close') closePanel(panel.kind + ':' + panel.id);
     const node = panel.kind === 'node' ? by(panel.id) : null;
     if (action === 'reveal' && node) revealed.add(node.id);
-    if (action === 'connect' && node) { source = source === node.id ? null : node.id; $('#hint').textContent = source ? '點另一個物件來連線；Esc 取消' : '右鍵選單 · 中鍵移動 · 左鍵拖物件 · 點物件開面板'; }
-    if (action === 'focus' && node) graph.current = node.id;
-    if (action === 'delete' && node) {
-      for (const child of graph.nodes) if (child.parentId === node.id) child.parentId = node.parentId || null;
-      graph.nodes = graph.nodes.filter(item => item.id !== node.id); graph.edges = graph.edges.filter(edge => edge.from !== node.id && edge.to !== node.id);
-      if (graph.current === node.id) graph.current = null; if (selected === node.id) selected = null; if (source === node.id) source = null;
-    }
-    if (action === 'edge-delete') graph.edges = graph.edges.filter(edge => edge.id !== panel.id);
+    if (action === 'delete' && node) deleteNode(node.id);
+    if (action === 'edge-delete') removeEdge(graph, panel.id);
     draw(); save();
   }
   function select(id) {
-    if (source && source !== id) { if (!graph.edges.some(edge => edge.from === source && edge.to === id || edge.to === source && edge.from === id)) graph.edges.push({id: crypto.randomUUID(), from: source, to: id, label: ''}); source = null; $('#hint').textContent = '右鍵選單 · 中鍵移動 · 左鍵拖物件 · 點物件開面板'; }
     selected = id; openPanel('node', id); draw(); save();
   }
   function create(point) {
-    const node = {id: crypto.randomUUID(), title: '新念頭', note: '', shape: 'ellipse', x: point.x, y: point.y - 50};
+    const node = {id: crypto.randomUUID(), title: '新想法', note: '', shape: 'ellipse', x: point.x, y: point.y - 50};
     graph.nodes.push(node); selected = node.id; const panel = openPanel('node', node.id); draw(); save();
     const field = panel?.element.querySelector('[data-field="title"]'); field?.focus(); field?.select();
   }
-  function arrange() {
-    for (const position of layout(graph.nodes)) {
-      const node = by(position.id), panel = panels.get('node:' + node.id);
-      if (panel) { panel.x += position.x - node.x; panel.y += position.y - node.y; }
-      Object.assign(node, position);
-    }
-    graph.layoutRevision = 'top-down-2026-10-12'; overview(); save();
-  }
+  function deleteNode(id) { removeNode(graph, id); if (selected === id) selected = null; }
   function dismissMenu() { menu.hidden = true; menuPoint = null; }
   canvas.addEventListener('contextmenu', event => {
     if (event.target.closest('.object-panel')) return;
     event.preventDefault(); if (event.target.closest('.zoom')) return;
     const bounds = canvas.getBoundingClientRect(), x = event.clientX - bounds.left, y = event.clientY - bounds.top;
-    menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z}; menu.hidden = false;
+    const nodeId = event.target.closest('.node')?.dataset.id;
+    menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z, nodeId};
+    menu.querySelector('[data-menu="create"]').hidden = Boolean(nodeId); menu.querySelector('[data-menu="delete"]').hidden = !nodeId; menu.hidden = false;
     menu.style.left = Math.max(6, Math.min(bounds.width - menu.offsetWidth - 6, x)) + 'px'; menu.style.top = Math.max(6, Math.min(bounds.height - menu.offsetHeight - 6, y)) + 'px';
   });
-  menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'arrange') arrange(); });
+  menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'delete' && point?.nodeId) { deleteNode(point.nodeId); draw(); save(); } });
   canvas.addEventListener('pointerdown', event => {
     if (event.target.closest('#context-menu,.zoom') || event.button !== 0 && event.button !== 1) return;
     dismissMenu();
     if (event.button === 0 && event.target.closest('.object-panel')) return;
     event.preventDefault(); gesture = null;
-    const node = event.target.closest('.node'), resize = event.target.closest('[data-resize]');
+    const node = event.target.closest('.node'), resize = event.target.closest('[data-resize]'), port = event.target.closest('[data-port]'), hit = event.target.closest('.connection-hit');
     if (event.button === 1) { gesture = {id: event.pointerId, type: 'pan', sx: event.clientX, sy: event.clientY, x: view.x, y: view.y, moved: false}; canvas.classList.add('panning'); }
+    else if (port && node) { const bounds = canvas.getBoundingClientRect(); gesture = {id: event.pointerId, type: 'link', node: node.dataset.id, port: port.dataset.port, point: {x: (event.clientX - bounds.left - view.x) / view.z, y: (event.clientY - bounds.top - view.y) / view.z}, sx: event.clientX, sy: event.clientY, moved: false}; draw(); }
+    else if (hit) gesture = {id: event.pointerId, type: 'edge', edge: hit.dataset.edgeId, sx: event.clientX, sy: event.clientY, moved: false};
     else if (resize) { const item = by(resize.dataset.resize), size = baseSize(item); gesture = {id: event.pointerId, type: 'resize', node: item.id, sx: event.clientX, sy: event.clientY, w: size.w, h: size.h, moved: false}; }
     else if (node) { const item = by(node.dataset.id); gesture = {id: event.pointerId, type: 'node', node: item.id, sx: event.clientX, sy: event.clientY, x: item.x, y: item.y, moved: false}; }
     else { selected = null; draw(); return; }
@@ -247,19 +236,27 @@
   window.addEventListener('pointermove', event => {
     if (!gesture || gesture.id !== event.pointerId) return;
     const dx = event.clientX - gesture.sx, dy = event.clientY - gesture.sy; if (Math.hypot(dx, dy) > 3) gesture.moved = true; if (!gesture.moved) return;
-    if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
+    if (gesture.type === 'edge') return;
+    if (gesture.type === 'link') { const bounds = canvas.getBoundingClientRect(); gesture.point = {x: (event.clientX - bounds.left - view.x) / view.z, y: (event.clientY - bounds.top - view.y) / view.z}; gesture.target = linkTarget(event); }
+    else if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
     else if (gesture.type === 'panel') { const panel = panels.get(gesture.key); if (!panel) return; panel.x = gesture.x + dx / view.z; panel.y = gesture.y + dy / view.z; }
     else if (gesture.type === 'resize') { const node = by(gesture.node); node.width = Math.round(Math.max(70, Math.min(600, gesture.w + dx / view.z))); node.height = Math.round(Math.max(50, Math.min(500, gesture.h + dy / view.z))); if (node.shape === 'circle') node.width = node.height = Math.max(node.width, node.height); }
-    else if (!source) { const node = by(gesture.node), panel = panels.get('node:' + node.id), nx = gesture.x + dx / view.z, ny = gesture.y + dy / view.z; if (panel) { panel.x += nx - node.x; panel.y += ny - node.y; } node.x = nx; node.y = ny; }
+    else { const node = by(gesture.node), panel = panels.get('node:' + node.id), nx = gesture.x + dx / view.z, ny = gesture.y + dy / view.z; if (panel) { panel.x += nx - node.x; panel.y += ny - node.y; } node.x = nx; node.y = ny; }
     draw();
   });
   function finish(event) {
     if (!gesture || gesture.id !== event.pointerId) return;
     const previous = gesture; gesture = null; canvas.classList.remove('panning');
+    if (previous.type === 'link') {
+      const target = linkTarget(event);
+      if (event.type === 'pointerup' && previous.moved && target && target !== previous.node && visual(by(target)) !== 'object' && !graph.edges.some(edge => edge.from === previous.node && edge.to === target || edge.to === previous.node && edge.from === target)) graph.edges.push({id: crypto.randomUUID(), from: previous.node, to: target, label: '', color: '#64768d', width: 1.5, lineStyle: 'solid'});
+      draw(); save(); return;
+    }
     if (previous.moved) save(); else if (previous.type === 'node' && event.type === 'pointerup') select(previous.node);
+    else if (previous.type === 'edge' && event.type === 'pointerup') { openPanel('edge', previous.edge); draw(); save(); }
   }
   window.addEventListener('pointerup', finish); window.addEventListener('pointercancel', finish);
-  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; canvas.classList.remove('panning'); save(); } });
+  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; canvas.classList.remove('panning'); draw(); save(); } });
   canvas.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
   canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
   $('#ai-mode').addEventListener('change', event => { settings.aiMode = event.target.value; save(); });
@@ -267,7 +264,7 @@
   document.addEventListener('pointerdown', event => { if (!canvas.contains(event.target)) dismissMenu(); });
   document.addEventListener('click', event => { if (event.target.closest('.object-panel')) return; const action = event.target.closest('[data-action]')?.dataset.action; if (action === 'minus' || action === 'plus') { const bounds = canvas.getBoundingClientRect(); zoomAt(bounds.width / 2, bounds.height / 2, action === 'plus' ? 1.2 : 1 / 1.2); save(); } });
   window.addEventListener('keydown', event => {
-    if (event.key === 'Escape') { dismissMenu(); source = null; selected = null; revealed.clear(); draw(); return; }
+    if (event.key === 'Escape') { dismissMenu(); if (gesture?.type === 'link') gesture = null; selected = null; revealed.clear(); draw(); return; }
     if (event.target.closest('input,textarea,select') || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key.toLowerCase() === 'f') { overview(); save(); }
   });

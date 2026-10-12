@@ -20,7 +20,7 @@ async page => {
   await page.mouse.click(cb.x+80,cb.y+100,{button:'right'});await page.locator('[data-menu="create"]').click();
   const id=await page.locator('.node[data-selected="true"]').getAttribute('data-id'),created=page.locator('.node[data-id="'+id+'"]'),box=await created.boundingBox();
   check(await page.locator('.node').count()===11,'Menu creation failed');check(Math.abs(box.x+box.width/2-cb.x-80)<2&&Math.abs(box.y+box.height/2-cb.y-100)<2,'Creation moved from right-click position');
-  await field(id,'title').fill('UI_PRIVATE_TITLE_8076');await field(id,'note').fill('UI_PRIVATE_NOTE_2319');await field(id,'parentId').selectOption('world');
+  await field(id,'title').fill('UI_PRIVATE_TITLE_8076');await field(id,'note').fill('UI_PRIVATE_NOTE_2319');
   // Open another object while retaining the first panel, then edit the first.
   await world.click();check(await page.locator('.object-panel[data-kind="node"]').count()===2,'Second object replaced first panel');
   const originalRootTitle=await field('world','title').inputValue();await field(id,'note').fill('UI_PRIVATE_NOTE_2319 updated');check(await field('world','title').inputValue()===originalRootTitle,'Panel bindings edited the selected object instead of their own');
@@ -51,8 +51,7 @@ async page => {
   await page.locator('#visual-mode').selectOption('show');await created.click();await field(id,'visualVisibility').selectOption('text');await field(id,'aiVisibility').selectOption('text');await page.locator('#visual-mode').selectOption('selective');
   await page.waitForTimeout(250);await page.reload();await page.locator('.node').first().waitFor();
   check(await page.locator('.object-panel[data-kind="node"]').count()===2,'Open panels lost on reload');check(await field(id,'title').isDisabled(),'Reload lost visual privacy');
-  const saved=await page.evaluate(()=>window.mapStore.load());const savedNode=saved.graph.nodes.find(node=>node.id===id);check(savedNode.parentId==='world'&&savedNode.background==='#503f28'&&savedNode.opacity===.65,'Reload lost object settings');
-  check(await field(id,'parentId').locator('option[value="'+id+'"]').count()===0,'Self parenting allowed');check(errors.length===0,'Runtime errors: '+errors.join('; '));
-  const output=decodeURIComponent(new URL(page.url()).pathname).replace(/^\/(?=[A-Za-z]:)/,'').replace(/\/index.html$/,'/test-output/ui.png');await page.screenshot({path:output});
+  const saved=await page.evaluate(()=>window.mapStore.load());const savedNode=saved.graph.nodes.find(node=>node.id===id);check(savedNode.background==='#503f28'&&savedNode.opacity===.65,'Reload lost object settings');
+  check(await page.locator('[data-menu=arrange],[data-action=focus],[data-action=connect],[data-field=parentId]').count()===0,'Removed controls remain');check(errors.length===0,'Runtime errors: '+errors.join('; '));
   return {passed:true,createdId:id,checks:['top-down placement','removed headers and sidebars','context menu creation','multiple independently bound panels','panel dragging and panning','individual close','object appearance resize drag','privacy across all open panels','hidden panels removed','encrypted reload persistence']};
 }
