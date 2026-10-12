@@ -1,5 +1,6 @@
 param(
   [string]$Method = 'api.describe',
+  [string]$ParamsJson,
   [string]$Path,
   [string]$Repo,
   [string]$Owner,
@@ -14,12 +15,13 @@ $floadeReader = $null
 $floadeWriter = $null
 try {
   $floadeParams = @{}
+  if ($ParamsJson) { $floadeDecoded = $ParamsJson | ConvertFrom-Json; foreach ($property in $floadeDecoded.PSObject.Properties) { $floadeParams[$property.Name] = $property.Value } }
   foreach ($floadeKey in @('Path', 'Repo', 'Owner', 'Limit')) {
     $floadeParameterName = $floadeKey.ToLowerInvariant()
     if ($PSBoundParameters.ContainsKey($floadeKey)) { $floadeParams[$floadeParameterName] = $PSBoundParameters[$floadeKey] }
   }
   if ($Replace) { $floadeParams.replace = $true }
-  $floadeRequest = @{ method = $Method; params = $floadeParams } | ConvertTo-Json -Compress
+  $floadeRequest = @{ method = $Method; params = $floadeParams } | ConvertTo-Json -Compress -Depth 10
   $floadePipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', $PipeName, [System.IO.Pipes.PipeDirection]::InOut)
   try { $floadePipe.Connect(1500) } catch {
     $floadeExe = Join-Path $PSScriptRoot 'Floade.exe'

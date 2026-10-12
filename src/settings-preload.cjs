@@ -13,5 +13,6 @@ contextBridge.exposeInMainWorld('floadeSettings', {
   installUpdate: () => ipcRenderer.invoke('settings:install-update'),
   onAppUpdate: callback => ipcRenderer.on('settings:app-update', (_event, state) => callback(state)),
   openMobile: () => ipcRenderer.invoke('settings:open-mobile'),
+  openRemote: () => ipcRenderer.invoke('settings:open-remote'),
   close: () => ipcRenderer.invoke('settings:close')
 })

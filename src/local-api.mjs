@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { remoteMethods } from './remote-service.mjs'
 
 const methods = {
   'api.describe': { description: 'Describe the local API.', params: {} },
@@ -12,7 +13,8 @@ const writable = permission => ['ADMIN', 'MAINTAIN', 'WRITE'].includes(permissio
 const normalizedPath = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
 function fail(code, message, details = {}) { throw Object.assign(new Error(message), { apiCode: code, details }) }
 
-export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false, getAppStatus = () => ({}) }) {
+export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false, getAppStatus = () => ({}), remote }) {
+  const supportedMethods = remote ? { ...methods, ...remoteMethods } : methods
   const isBusy = folderPath => busyFolders.has(folderPath) || isPushing(folderPath)
   async function github(args) {
     try { return await command('gh', args) } catch (error) {
@@ -24,7 +26,8 @@ export function createLocalApi({ getFolders, command, saveLink, refresh, busyFol
   const authenticate = () => github(['auth', 'status', '--active', '--hostname', 'github.com'])
   function findFolder(folderPath) { return getFolders().find(folder => normalizedPath(folder.path) === normalizedPath(folderPath)) }
   async function dispatch(method, params) {
-    if (method === 'api.describe') return { apiVersion: 1, transport: 'newline-delimited JSON over local control pipe', methods }
+    if (method === 'api.describe') return { apiVersion: 1, transport: 'newline-delimited JSON over local control pipe', methods: supportedMethods }
+    if (method.startsWith('remote.') && remote) return remote(method, params)
     if (method === 'app.status') return getAppStatus()
     if (method === 'folders.list') return { folders: getFolders().map(folder => ({
       path: folder.path, repo: folder.repo, exists: fs.existsSync(folder.path), busy: isBusy(folder.path)
@@ -67,7 +70,7 @@ export function createLocalApi({ getFolders, command, saveLink, refresh, busyFol
   }
   return async request => {
     try {
-      if (!request || typeof request !== 'object' || Array.isArray(request) || !Object.hasOwn(methods, request.method)) fail('METHOD_NOT_FOUND', 'Use api.describe to discover supported methods.')
+      if (!request || typeof request !== 'object' || Array.isArray(request) || !Object.hasOwn(supportedMethods, request.method)) fail('METHOD_NOT_FOUND', 'Use api.describe to discover supported methods.')
       const params = request.params ?? {}
       if (typeof params !== 'object' || Array.isArray(params)) fail('INVALID_PARAMS', 'params must be an object.')
       return { ok: true, result: await dispatch(request.method, params) }

@@ -4,3 +4,5 @@ node_modules/
 .DS_Store
 dist/
 out/
+vendor/remote/windows-x64/
+release-output/

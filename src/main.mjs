@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, screen, shell, Tray, nativeImage } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, Menu, screen, shell, Tray, nativeImage, safeStorage } from 'electron'
 import { execFile, spawnSync } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
@@ -17,6 +17,8 @@ import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
 import { createAutoPull } from './pull-folder.mjs'
 import { createAppUpdater, createInstalledAppUpdater } from './app-updater.mjs'
 import { openWorkMap } from './work-map.mjs'
+import { createRemoteService } from './remote-service.mjs'
+import { createRemoteWindow } from './remote-window.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -39,6 +41,8 @@ if (process.argv.includes('--work-map')) {
   let screenTranslator
   let autoPull
   let appUpdates
+  let remoteService
+  let showRemote
   let quitting = false
   const pullingFolders = new Set()
   let floatingLauncher
@@ -561,6 +565,9 @@ if (process.argv.includes('--work-map')) {
   }
 
   function registerSettingsHandlers() {
+    ipcMain.handle('settings:open-remote', event => {
+      if (event.sender === settingsWindow?.webContents) showRemote?.('settings')
+    })
     ipcMain.handle('settings:check-update', event => {
       if (event.sender !== settingsWindow?.webContents) return
       return appUpdates?.check()
@@ -885,7 +892,11 @@ if (process.argv.includes('--work-map')) {
       if (pushingFolders.size || pullingFolders.size || linkingFolders.size || documentMutations.size) {
         showToast(tr('menu.quit'), tr('launcher.busy'), 'error'); return false
       }
-      if (install) return appUpdates.install()
+      if (install) {
+        try { await remoteService?.prepareUpdate() }
+        catch (error) { showToast(tr('update.failed'), error.message, 'error'); return false }
+        return appUpdates.install()
+      }
       app.quit()
       return true
     } finally { quitting = false }
@@ -947,6 +958,7 @@ if (process.argv.includes('--work-map')) {
   }
 
   async function launcherAction(name, folderPath) {
+    if (name === 'remote') return showRemote?.('connect')
     if (name === 'add-folder') return addFolder()
     if (name === 'text-translate') return screenTranslator?.openTextWindow()
     if (name === 'screen-translate') return screenTranslator?.start()
@@ -1044,7 +1056,13 @@ if (process.argv.includes('--work-map')) {
       fs.unlinkSync(controlSocket)
     }
 
+    remoteService = createRemoteService({
+      dataDirectory: app.getPath('userData'), safeStorage,
+      runtimeDirectory: app.isPackaged ? path.join(process.resourcesPath, 'remote') : path.join(app.getAppPath(), 'vendor', 'remote', 'windows-x64')
+    })
+    showRemote = createRemoteWindow({ BrowserWindow, ipcMain, shell, service: remoteService, appPath: app.getAppPath(), icon: windowIconPath, locale: effectiveLocale })
     const localApi = createLocalApi({
+      remote: remoteService.dispatch,
       getAppStatus: () => ({ version: app.getVersion(), channel: 'stable', updates: appUpdates?.state() }),
       getFolders: () => folders,
       command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
@@ -1087,6 +1105,7 @@ if (process.argv.includes('--work-map')) {
     refreshTrayMenu()
     void initializeAppUpdates()
     applyStartup(settings.startAtLogin)
+    if (process.platform === 'win32' && process.env.FLOADE_REMOTE_SKIP_START !== '1') void remoteService.start().catch(error => console.warn(`Floade remote: ${error.apiCode || 'START_FAILED'}`))
     runDailyPush()
     autoPushTimer = setInterval(runDailyPush, 60 * 1000)
     if (settings.shortcut) {

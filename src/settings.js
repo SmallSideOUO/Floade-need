@@ -1,4 +1,5 @@
 const opacityInput = document.querySelector('#opacity')
+document.getElementById('open-remote').addEventListener('click', () => window.floadeSettings.openRemote())
 const opacityValue = document.querySelector('#opacity-value')
 const languageSelect = document.querySelector('#language')
 const closeButton = document.querySelector('#close')

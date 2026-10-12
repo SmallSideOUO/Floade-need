@@ -1,5 +1,7 @@
 # Floade
 
+Version 0.1.22 adds Floade Remote: device codes, password authentication, protected remembered credentials, manual/API preferences and branded native remote windows. The floating dot places Remote below Add folder. See [remote setup and API](docs/remote.md) and [source/license notices](THIRD-PARTY-NOTICES.md). This integrated distribution is AGPL-3.0; previous MIT notices remain in LICENSE-MIT.
+
 [English](README.md) | [繁體中文](README.zh-TW.md)
 
 Floade is a tiny system-tray app that links local folders to private GitHub repositories and pushes every local change in one click.

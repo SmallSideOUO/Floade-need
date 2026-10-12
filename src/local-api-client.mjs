@@ -29,6 +29,7 @@ export function parseApiArguments(args) {
   const params = {}
   for (let index = 0; index < flags.length; index += 1) {
     const flag = flags[index]
+    if (flag === '--params' && flags[index + 1] !== undefined) { Object.assign(params, JSON.parse(flags[++index])); continue }
     if (flag === '--replace') { params.replace = true; continue }
     if (!['--path', '--repo', '--owner', '--limit'].includes(flag) || flags[index + 1] === undefined) throw new Error(`Invalid API argument: ${flag}`)
     const value = flags[++index]

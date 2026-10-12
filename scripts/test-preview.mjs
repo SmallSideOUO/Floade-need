@@ -10,6 +10,7 @@ import { createFloatingLauncher } from '../src/floating-launcher.mjs'
 
 const root = process.env.FLOADE_QA_APP_PATH || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'floade-preview-qa-'))
+process.env.FLOADE_REMOTE_SKIP_START = '1'
 await fs.mkdir(path.join(temporary, 'profile'))
 app.setPath('userData', path.join(temporary, 'profile'))
 app.setAppPath(root)
@@ -93,7 +94,9 @@ try {
   const apiSocket = process.platform === 'win32' ? `\\\\.\\pipe\\floade-preview-qa-${process.pid}` : path.join(os.tmpdir(), `floade-preview-qa-${process.pid}.sock`)
   const apiCall = (method, params = {}) => requestLocalApi({ method, params }, { socketPath: apiSocket })
   const folderState = () => previewQA.readLauncherData().folders.find(folder => folder.path === globalThis.previewApiFolder)
-  assert.deepEqual(Object.keys((await apiCall('api.describe')).result.methods), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
+  const describedMethods = (await apiCall('api.describe')).result.methods
+  assert.deepEqual(Object.keys(describedMethods).filter(method => !method.startsWith('remote.')), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.ok(describedMethods['remote.connect'] && describedMethods['remote.settings.update'])
   assert.equal((await apiCall('communication.status')).error.code, 'METHOD_NOT_FOUND')
   assert.equal(previewQA.buildTrayMenu().items.length, 5)
   assert.ok(['Quit', '退出'].includes(previewQA.buildTrayMenu().items.at(-1).label))
@@ -131,7 +134,8 @@ try {
   const runPanel = code => launcher.panel.webContents.executeJavaScript(code)
   await until(() => runBall('Boolean(window.floadeLauncher)'))
   await until(() => runPanel('Boolean(window.floadeLauncher)'))
-  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 4)
+  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 5)
+  assert.equal(await runPanel('document.querySelector("#add-folder").nextElementSibling.id'), 'remote')
   assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'work-map')
   await until(() => runPanel('document.querySelector("#work-map img").naturalWidth > 0'))
   await runPanel('document.querySelector("#work-map").click()')
@@ -140,7 +144,7 @@ try {
   results.push('Work Map appears to the right of screen translation, loads the Floade logo and invokes the main-process launch action')
   assert.equal(await runPanel('Boolean(document.querySelector("#communication"))'), false)
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
-  results.push('AI communication UI and APIs remain removed; the four quick actions load normally')
+  results.push('AI communication UI and APIs remain removed; five quick actions including Remote load normally')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)
   assert.equal(launcher.ball.__qaSkipTaskbar, true)
   assert.equal(launcher.panel.__qaSkipTaskbar, true)
