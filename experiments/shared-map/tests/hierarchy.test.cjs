@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const {lineage, canParent, outline} = require('../hierarchy.cjs');
+const {lineage, canParent, outline, layout} = require('../hierarchy.cjs');
 const {applyOrganization} = require('../organization.cjs');
 const {aiMap} = require('../privacy.cjs');
 
@@ -18,6 +18,23 @@ test('malformed cycles and hidden parents still produce a finite outline', () =>
   assert.equal(outline(nodes).length, 3);
   assert.equal(lineage(nodes,'a').length, 2);
   assert.equal(outline(nodes).find(row=>row.node.id==='orphan').depth, 0);
+});
+
+test('top-down layout puts the primary purpose above branches without overlaps or content changes', () => {
+  const nodes=[{id:'leaf',parentId:'branch',width:600,height:200,title:'Evidence',x:9,y:8},{id:'world',width:260,height:160},{id:'branch',parentId:'world',width:340,height:140},{id:'sibling',parentId:'world',width:500,height:180},{id:'loose',width:300,height:160},{id:'second-leaf',parentId:'branch',width:200,height:100}];
+  const before=JSON.stringify(nodes), positions=layout(nodes), lookup=new Map(positions.map(node=>[node.id,node]));
+  assert.equal(JSON.stringify(nodes),before);
+  assert.equal(lookup.get('world').y,0);
+  for(const node of nodes.filter(node=>node.id!=='world'))assert.ok(lookup.get(node.id).y>0);
+  for(const node of nodes.filter(node=>node.parentId)){const parent=nodes.find(item=>item.id===node.parentId);assert.ok(lookup.get(node.id).y>=lookup.get(parent.id).y+(parent.height||100)+100)}
+  for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+    const a=nodes[i],b=nodes[j],p=lookup.get(a.id),q=lookup.get(b.id);
+    const overlapX=Math.abs(p.x-q.x)<((a.width||210)+(b.width||210))/2;
+    const overlapY=p.y<q.y+(b.height||100)&&q.y<p.y+(a.height||100);
+    assert.equal(overlapX&&overlapY,false,`Overlap between ${a.id} and ${b.id}`);
+  }
+  assert.deepEqual(layout([]),[]);
+  assert.equal(layout([{id:'a',parentId:'b'},{id:'b',parentId:'a'}]).length,2);
 });
 
 test('AI hierarchy never exposes an excluded object through a parent reference', () => {

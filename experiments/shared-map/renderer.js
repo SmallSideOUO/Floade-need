@@ -1,72 +1,284 @@
 'use strict';
-(async()=>{
-const $=s=>document.querySelector(s),canvas=$('#canvas'),layer=$('#nodes'),lines=$('#lines');
-let graph,view={x:0,y:0,z:.6},settings={aiMode:'protected',visualMode:'selective'},selected=null,edgeId=null,source=null,gesture=null,revealed=null,saveTimer,ready=false;
-const by=id=>graph.nodes.find(n=>n.id===id),currentEdge=()=>graph.edges.find(e=>e.id===edgeId);
-const {lineage,canParent,outline}=window.mapHierarchy;
-const factor=()=>view.z<.3?.32:view.z<.65?.7:1;
-const dims=n=>({w:(n.width||(n.shape==='circle'?140:210))*factor(),h:(n.height||(n.shape==='circle'?140:n.shape==='diamond'?130:100))*factor()});
-const at=n=>({x:view.x+n.x*view.z,y:view.y+n.y*view.z});
-const visual=n=>settings.visualMode==='show'||revealed===n.id?'full':settings.visualMode==='mask'?(n.visualVisibility==='object'?'object':'text'):n.visualVisibility||'full';
-const label=n=>!n?'未指定':visual(n)==='full'?(n.title||'未命名'):'••••••';
-const payload=()=>({graph,view,settings});
-function save(){clearTimeout(saveTimer);$('#save-status').textContent='儲存中…';saveTimer=setTimeout(async()=>{try{await window.mapStore.save(payload());$('#save-status').textContent='已儲存 · AI 版本已更新'}catch(error){$('#save-status').textContent='儲存失敗：'+error.message}},130)}
-function svg(name,attrs={}){const e=document.createElementNS('http://www.w3.org/2000/svg',name);for(const [key,value]of Object.entries(attrs))e.setAttribute(key,value);return e}
-function shapePath(n){if(n.shape==='circle'||n.shape==='ellipse')return'M 50 2 A 48 48 0 1 1 49.99 2 Z';if(n.shape==='diamond')return'M 50 2 L 98 50 L 50 98 L 2 50 Z';return n.shape==='rectangle'?'M 2 2 H 98 V 98 H 2 Z':'M 10 2 H 90 Q 98 2 98 10 V 90 Q 98 98 90 98 H 10 Q 2 98 2 90 V 10 Q 2 2 10 2 Z'}
-function anchor(n,target){const p=at(n),d=dims(n),cx=p.x,cy=p.y+d.h/2,dx=target.x-cx,dy=target.y-cy;if(!dx&&!dy)return{x:cx,y:cy};let f;if(n.shape==='ellipse'||n.shape==='circle')f=1/Math.sqrt((dx/(d.w*.48))**2+(dy/(d.h*.48))**2);else if(n.shape==='diamond')f=1/(Math.abs(dx)/(d.w*.48)+Math.abs(dy)/(d.h*.48));else f=Math.min(dx?d.w*.48/Math.abs(dx):Infinity,dy?d.h*.48/Math.abs(dy):Infinity);return{x:cx+dx*f,y:cy+dy*f}}
-function context(){
- const visible=graph.nodes.filter(n=>visual(n)!=='object'),path=lineage(visible,selected||graph.current),active=new Set(path.map(n=>n.id));
- $('#outline').replaceChildren();
- for(const {node:n,depth}of outline(visible)){
-  const row=document.createElement('button');row.type='button';row.className='outline-row';row.dataset.outlineId=n.id;row.dataset.depth=depth;row.dataset.active=String(active.has(n.id));row.dataset.current=String(n.id===graph.current);row.style.paddingLeft=12+depth*14+'px';
-  const title=document.createElement('span');title.textContent=label(n);row.append(title);
-  if(visual(n)==='full'&&(n.mark||n.id===graph.current)){const mark=document.createElement('small');mark.textContent=n.id===graph.current?'手上這件事':n.mark;row.append(mark)}
-  row.addEventListener('click',()=>{select(n.id);const b=canvas.getBoundingClientRect();view.x=b.width/2-n.x*view.z;view.y=b.height/2-n.y*view.z-dims(n).h/2;draw();save()});$('#outline').append(row);
- }
- const current=lineage(visible,graph.current);$('#context-trail').textContent=current.length?'手上的脈絡：'+current.map(label).join(' → '):'尚未指定手上的工作';
-}
-function draw(){
- const b=canvas.getBoundingClientRect();lines.setAttribute('viewBox',`0 0 ${b.width} ${b.height}`);lines.replaceChildren();layer.replaceChildren();
- const defs=svg('defs'),arrow=svg('marker',{id:'context-arrow',viewBox:'0 0 10 10',refX:9,refY:5,markerWidth:6,markerHeight:6,orient:'auto-start-reverse'});arrow.append(svg('path',{d:'M 1 1 L 9 5 L 1 9',fill:'none',stroke:'#78aef8','stroke-width':1.3}));defs.append(arrow);lines.append(defs);
- const pathIds=new Set(lineage(graph.nodes,selected||graph.current).map(n=>n.id));
- const links=graph.edges.filter(e=>by(e.to)?.parentId!==e.from&&by(e.from)?.parentId!==e.to).map(e=>({...e,hierarchy:false}));
- for(const n of graph.nodes)if(n.parentId&&by(n.parentId)&&canParent(graph.nodes,n.id,n.parentId))links.push({from:n.parentId,to:n.id,hierarchy:true,label:''});
- for(const e of links){const a=by(e.from),z=by(e.to);if(!a||!z||visual(a)==='object'||visual(z)==='object')continue;const ac=at(a),zc=at(z);ac.y+=dims(a).h/2;zc.y+=dims(z).h/2;const p=anchor(a,zc),q=anchor(z,ac),mx=(p.x+q.x)/2,active=e.hierarchy&&pathIds.has(a.id)&&pathIds.has(z.id);const line=svg('path',{d:`M ${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${q.y} ${q.x} ${q.y}`,fill:'none',stroke:e.id===edgeId||active?'#78aef8':e.hierarchy?'#64768d':'#484851','stroke-width':active||e.id===edgeId?2:e.hierarchy?1.5:1,'data-kind':e.hierarchy?'context':'association'});if(e.hierarchy)line.setAttribute('marker-end','url(#context-arrow)');else line.setAttribute('stroke-dasharray','4 5');line.style.opacity=String(Math.min(a.opacity??1,z.opacity??1)*(e.hierarchy||e.id===edgeId?1:.5));lines.append(line);if(e.label&&view.z>=.65&&visual(a)==='full'&&visual(z)==='full'){const text=svg('text',{x:mx,y:(p.y+q.y)/2-6,fill:'#9999a5','font-size':11,'text-anchor':'middle'});text.textContent=e.label;lines.append(text)}}
- for(const n of graph.nodes){if(visual(n)==='object')continue;const p=at(n),d=dims(n),button=document.createElement('button');button.type='button';button.className='node';button.dataset.id=n.id;button.dataset.current=String(n.id===graph.current);button.dataset.selected=String(n.id===selected);button.dataset.source=String(n.id===source);button.dataset.compact=String(view.z<.3);button.dataset.shape=n.shape;button.dataset.masked=String(visual(n)!=='full');button.setAttribute('aria-label',label(n));Object.assign(button.style,{left:p.x-d.w/2+'px',top:p.y+'px',width:d.w+'px',height:d.h+'px',color:n.textColor||'#eeeef1',opacity:String(n.opacity??1)});const image=svg('svg',{viewBox:'0 0 100 100',preserveAspectRatio:'none'}),shape=svg('path',{d:shapePath(n),class:'node-shape'});shape.style.fill=n.background||(n.id===graph.current?'#222936':'#17171b');image.append(shape);button.append(image);const copy=document.createElement('span');copy.className='node-copy';const title=document.createElement('strong');title.textContent=label(n);copy.append(title);if(view.z>=.65&&visual(n)==='full'&&(n.mark||n.id===graph.current)){const mark=document.createElement('small');mark.textContent=n.id===graph.current?'手上這件事':n.mark;copy.append(mark)}button.append(copy);button.addEventListener('click',e=>{if(e.detail===0)select(n.id)});layer.append(button);
-  if(n.id===selected){const handle=document.createElement('button');handle.className='resize-handle';handle.dataset.resize=n.id;handle.type='button';handle.setAttribute('aria-label','拖曳調整物件大小');handle.style.left=p.x+d.w/2-5+'px';handle.style.top=p.y+d.h-5+'px';layer.append(handle)}
- }
- $('.focus').textContent='手上：'+label(by(graph.current));$('#scale').textContent=Math.round(view.z*100)+'%';
- context();
-}
-function overview(){const items=graph.nodes.filter(n=>visual(n)!=='object'),b=canvas.getBoundingClientRect();if(!items.length){view={x:b.width/2,y:b.height/2,z:.6};draw();return}const xs=items.map(n=>n.x),ys=items.map(n=>n.y),minX=Math.min(...xs),maxX=Math.max(...xs),minY=Math.min(...ys),maxY=Math.max(...ys);view.z=Math.max(.15,Math.min(.6,(b.width-270)/Math.max(1,maxX-minX),(b.height-190)/Math.max(1,maxY-minY)));view.x=b.width/2-(minX+maxX)*view.z/2;view.y=35-minY*view.z;draw()}
-function zoomAt(x,y,f){const old=view.z,z=Math.max(.15,Math.min(2,old*f));view.x=x-(x-view.x)*z/old;view.y=y-(y-view.y)*z/old;view.z=z;draw()}
-function inspect(){const n=by(selected),e=currentEdge();$('aside').hidden=!n&&!e;$('#node-editor').hidden=!n;$('#edge-editor').hidden=!e;
- if(n){const parent=$('#parent');parent.replaceChildren();const root=document.createElement('option');root.value='';root.textContent='最外層（沒有上層）';parent.append(root);for(const {node:item,depth}of outline(graph.nodes.filter(item=>visual(item)!=='object'))){if(!canParent(graph.nodes,n.id,item.id))continue;const option=document.createElement('option');option.value=item.id;option.textContent='　'.repeat(depth)+label(item);parent.append(option)}if(n.parentId&&!Array.from(parent.options).some(option=>option.value===n.parentId)){const hidden=document.createElement('option');hidden.value=n.parentId;hidden.textContent='已隱藏的上層';parent.append(hidden)}parent.value=n.parentId||'';}
- if(n){const masked=visual(n)!=='full';$('#selection').textContent=n.id===graph.current?'手上這件事':'正在看這裡';$('#title').value=masked?'[視覺遮蔽]':n.title;$('#note').value=masked?'[視覺遮蔽]':n.note||'';$('#title').disabled=masked;$('#note').disabled=masked;$('[data-action="reveal"]').hidden=!masked;$('#shape').value=n.shape;$('#background').value=n.background||'#17171b';$('#text-color').value=n.textColor||'#eeeef1';$('#width').value=Math.round(n.width||(n.shape==='circle'?140:210));$('#height').value=Math.round(n.height||(n.shape==='circle'?140:n.shape==='diamond'?130:100));$('#opacity').value=Math.round((n.opacity??1)*100);$('#opacity-value').textContent=$('#opacity').value+'%';$('#ai-visibility').value=n.aiVisibility||'full';$('#visual-visibility').value=n.visualVisibility||'full';$('#related').replaceChildren();for(const relation of graph.edges.filter(e=>e.from===n.id||e.to===n.id)){const other=by(relation.from===n.id?relation.to:relation.from),button=document.createElement('button');button.textContent=label(other);button.addEventListener('click',()=>{selected=null;edgeId=relation.id;revealed=null;inspect();draw()});$('#related').append(button)}}
- if(e){const a=by(e.from),b=by(e.to),masked=visual(a)!=='full'||visual(b)!=='full';$('#selection').textContent='連線';$('#edge-name').textContent=label(a)+' ↔ '+label(b);$('#edge-label').value=masked?'[視覺遮蔽]':e.label||'';$('#edge-label').disabled=masked}
-}
-function select(id){if(source&&source!==id){if(!graph.edges.some(e=>e.from===source&&e.to===id||e.to===source&&e.from===id))graph.edges.push({id:crypto.randomUUID(),from:source,to:id,label:''});source=null;$('#hint').textContent='右鍵新增 · 中鍵移動 · 左鍵拖物件 · F 看全圖';save()}if(selected!==id)revealed=null;selected=id;edgeId=null;inspect();draw()}
-function create(x,y){const n={id:crypto.randomUUID(),title:'新念頭',note:'',shape:'ellipse',x:(x-view.x)/view.z,y:0};n.y=(y-view.y-dims(n).h/2)/view.z;graph.nodes.push(n);selected=n.id;edgeId=null;revealed=null;inspect();draw();save();if(!$('#title').disabled){$('#title').focus();$('#title').select()}}
-canvas.addEventListener('contextmenu',e=>{e.preventDefault();if(e.target.closest('.node')){select(e.target.closest('.node').dataset.id);return}if(e.target.closest('.zoom'))return;const b=canvas.getBoundingClientRect();create(e.clientX-b.left,e.clientY-b.top)});
-canvas.addEventListener('pointerdown',e=>{if(e.target.closest('.zoom')||e.button!==0&&e.button!==1)return;gesture=null;const n=e.target.closest('.node'),resize=e.target.closest('[data-resize]');e.preventDefault();
- if(e.button===1){gesture={id:e.pointerId,type:'pan',sx:e.clientX,sy:e.clientY,x:view.x,y:view.y,moved:false};canvas.classList.add('panning')}
- else if(resize){const item=by(resize.dataset.resize);gesture={id:e.pointerId,type:'resize',node:item.id,sx:e.clientX,sy:e.clientY,w:item.width||(item.shape==='circle'?140:210),h:item.height||(item.shape==='circle'?140:item.shape==='diamond'?130:100),f:factor(),moved:false}}
- else if(n){const item=by(n.dataset.id);gesture={id:e.pointerId,type:'node',node:item.id,sx:e.clientX,sy:e.clientY,x:item.x,y:item.y,moved:false}}
- else{selected=null;edgeId=null;revealed=null;inspect();draw();return}canvas.setPointerCapture(e.pointerId)
-});
-window.addEventListener('pointermove',e=>{if(!gesture||gesture.id!==e.pointerId)return;const dx=e.clientX-gesture.sx,dy=e.clientY-gesture.sy;if(Math.hypot(dx,dy)>3)gesture.moved=true;if(!gesture.moved)return;if(gesture.type==='pan'){view.x=gesture.x+dx;view.y=gesture.y+dy}else if(gesture.type==='resize'){const n=by(gesture.node);n.width=Math.round(Math.max(70,Math.min(600,gesture.w+dx/gesture.f)));n.height=Math.round(Math.max(50,Math.min(500,gesture.h+dy/gesture.f)));if(n.shape==='circle')n.width=n.height=Math.max(n.width,n.height);$('#width').value=Math.round(n.width);$('#height').value=Math.round(n.height)}else if(!source){const n=by(gesture.node);n.x=gesture.x+dx/view.z;n.y=gesture.y+dy/view.z}draw()});
-function finish(e){if(!gesture||gesture.id!==e.pointerId)return;const g=gesture;gesture=null;canvas.classList.remove('panning');if(g.moved)save();else if(g.type==='node'&&e.type==='pointerup')select(g.node)}
-window.addEventListener('pointerup',finish);window.addEventListener('pointercancel',finish);window.addEventListener('blur',()=>{if(gesture){gesture=null;canvas.classList.remove('panning');save()}});canvas.addEventListener('auxclick',e=>{if(e.button===1)e.preventDefault()});canvas.addEventListener('wheel',e=>{e.preventDefault();const b=canvas.getBoundingClientRect();zoomAt(e.clientX-b.left,e.clientY-b.top,Math.exp(-e.deltaY*.001));save()},{passive:false});
-$('#title').addEventListener('input',e=>{const n=by(selected);if(n&&!e.target.disabled){n.title=e.target.value;draw();save()}});$('#note').addEventListener('input',e=>{const n=by(selected);if(n&&!e.target.disabled){n.note=e.target.value;save()}});$('#edge-label').addEventListener('input',e=>{const edge=currentEdge();if(edge&&!e.target.disabled){edge.label=e.target.value;draw();save()}});
-$('#shape').addEventListener('change',e=>{const n=by(selected);if(n){n.shape=e.target.value;delete n.width;delete n.height;inspect();draw();save()}});
-$('#parent').addEventListener('change',e=>{const n=by(selected);if(n&&canParent(graph.nodes,n.id,e.target.value)){n.parentId=e.target.value||null;draw();save()}});
-for(const [selector,key]of [['#background','background'],['#text-color','textColor']])$(selector).addEventListener('input',e=>{const n=by(selected);if(n){n[key]=e.target.value;draw();save()}});
-for(const name of ['width','height'])$('#'+name).addEventListener('change',e=>{const n=by(selected),v=Number(e.target.value);if(!n||!Number.isFinite(v))return;n[name]=Math.max(name==='width'?70:50,Math.min(name==='width'?600:500,v));if(n.shape==='circle')n.width=n.height=n[name];inspect();draw();save()});
-$('#opacity').addEventListener('input',e=>{const n=by(selected);if(n){n.opacity=Number(e.target.value)/100;$('#opacity-value').textContent=e.target.value+'%';draw();save()}});
-for(const [selector,key]of [['#ai-visibility','aiVisibility'],['#visual-visibility','visualVisibility']])$(selector).addEventListener('change',e=>{const n=by(selected);if(n){n[key]=e.target.value;revealed=null;inspect();draw();save()}});
-$('#ai-mode').addEventListener('change',e=>{settings.aiMode=e.target.value;save()});$('#visual-mode').addEventListener('change',e=>{settings.visualMode=e.target.value;revealed=null;inspect();draw();save()});
-document.addEventListener('click',e=>{const action=e.target.closest('[data-action]')?.dataset.action,n=by(selected),b=canvas.getBoundingClientRect();if(!action)return;if(action==='close'){selected=null;edgeId=null;revealed=null;inspect();draw()}if(action==='reveal'&&n){revealed=n.id;inspect();draw()}if(action==='connect'&&n){source=source===n.id?null:n.id;$('#hint').textContent=source?'點另一個物件來連線；Esc 取消':'右鍵新增 · 中鍵移動 · 左鍵拖物件';draw()}if(action==='focus'&&n){graph.current=n.id;inspect();draw();save()}if(action==='delete'&&n){for(const child of graph.nodes)if(child.parentId===n.id)child.parentId=n.parentId||null;graph.nodes=graph.nodes.filter(x=>x.id!==n.id);graph.edges=graph.edges.filter(e=>e.from!==n.id&&e.to!==n.id);if(graph.current===n.id)graph.current=null;selected=null;revealed=null;source=null;inspect();draw();save()}if(action==='edge-delete'&&edgeId){graph.edges=graph.edges.filter(e=>e.id!==edgeId);edgeId=null;inspect();draw();save()}if(action==='minus'||action==='plus'){zoomAt(b.width/2,b.height/2,action==='plus'?1.2:1/1.2);save()}});
-window.addEventListener('keydown',e=>{if(e.target.closest('input,textarea,select'))return;if(e.key.toLowerCase()==='f'){overview();save()}if(e.key==='Escape'){source=null;selected=null;edgeId=null;revealed=null;inspect();draw()}});
-window.addEventListener('beforeunload',()=>{if(ready){clearTimeout(saveTimer);window.mapStore.saveNow(payload())}});
-try{const state=await window.mapStore.load();graph=state.graph;if(!Array.isArray(graph.nodes)||!Array.isArray(graph.edges))throw new Error('地圖格式無效');for(const n of graph.nodes)if(!['circle','ellipse','diamond','rounded','rectangle'].includes(n.shape))n.shape='ellipse';settings={...settings,...state.settings};$('#ai-mode').value=settings.aiMode;$('#visual-mode').value=settings.visualMode;ready=true;if(state.view&&Number.isFinite(state.view.x)&&Number.isFinite(state.view.y)&&Number.isFinite(state.view.z)){view=state.view;draw()}else overview();$('#save-status').textContent='本機加密儲存 · AI 版本已產生';new ResizeObserver(()=>draw()).observe(canvas)}catch(error){$('#save-status').textContent='載入失敗：'+error.message;canvas.style.pointerEvents='none'}
+(async () => {
+  const $ = selector => document.querySelector(selector);
+  const canvas = $('#canvas'), layer = $('#nodes'), lines = $('#lines'), panelLayer = $('#panels'), menu = $('#context-menu');
+  const {lineage, canParent, outline, layout} = window.mapHierarchy;
+  let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
+  let selected = null, source = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0;
+  const panels = new Map(), revealed = new Set();
+  const by = id => graph.nodes.find(node => node.id === id);
+  const edgeBy = id => graph.edges.find(edge => edge.id === id);
+  const baseSize = node => ({w: node.width || (node.shape === 'circle' ? 140 : 210), h: node.height || (node.shape === 'circle' ? 140 : node.shape === 'diamond' ? 130 : 100)});
+  const dims = node => { const size = baseSize(node); return {w: size.w * view.z, h: size.h * view.z}; };
+  const at = point => ({x: view.x + point.x * view.z, y: view.y + point.y * view.z});
+  const visual = node => !node ? 'object' : settings.visualMode === 'show' || revealed.has(node.id) ? 'full' : settings.visualMode === 'mask' ? (node.visualVisibility === 'object' ? 'object' : 'text') : node.visualVisibility || 'full';
+  const label = node => !node ? '未指定' : visual(node) === 'full' ? node.title || '未命名' : '••••••';
+  const payload = () => ({graph, view, settings, panels: [...panels.values()].map(({kind, id, x, y}) => ({kind, id, x, y}))});
+
+  function save() {
+    clearTimeout(saveTimer);
+    $('#save-status').textContent = '儲存中…';
+    saveTimer = setTimeout(async () => {
+      try { await window.mapStore.save(payload()); $('#save-status').textContent = '已儲存 · AI 版本已更新'; }
+      catch (error) { $('#save-status').textContent = '儲存失敗：' + error.message; }
+    }, 130);
+  }
+  function svg(name, attrs = {}) {
+    const element = document.createElementNS('http://www.w3.org/2000/svg', name);
+    for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
+    return element;
+  }
+  function shapePath(node) {
+    if (node.shape === 'circle' || node.shape === 'ellipse') return 'M 50 2 A 48 48 0 1 1 49.99 2 Z';
+    if (node.shape === 'diamond') return 'M 50 2 L 98 50 L 50 98 L 2 50 Z';
+    return node.shape === 'rectangle' ? 'M 2 2 H 98 V 98 H 2 Z' : 'M 10 2 H 90 Q 98 2 98 10 V 90 Q 98 98 90 98 H 10 Q 2 98 2 90 V 10 Q 2 2 10 2 Z';
+  }
+  function anchor(node, target) {
+    const point = at(node), size = dims(node), cx = point.x, cy = point.y + size.h / 2, dx = target.x - cx, dy = target.y - cy;
+    if (!dx && !dy) return {x: cx, y: cy};
+    let scale;
+    if (node.shape === 'ellipse' || node.shape === 'circle') scale = 1 / Math.sqrt((dx / (size.w * .48)) ** 2 + (dy / (size.h * .48)) ** 2);
+    else if (node.shape === 'diamond') scale = 1 / (Math.abs(dx) / (size.w * .48) + Math.abs(dy) / (size.h * .48));
+    else scale = Math.min(dx ? size.w * .48 / Math.abs(dx) : Infinity, dy ? size.h * .48 / Math.abs(dy) : Infinity);
+    return {x: cx + dx * scale, y: cy + dy * scale};
+  }
+  function draw() {
+    const bounds = canvas.getBoundingClientRect();
+    lines.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`);
+    lines.replaceChildren(); layer.replaceChildren();
+    const defs = svg('defs'), arrow = svg('marker', {id: 'context-arrow', viewBox: '0 0 10 10', refX: 9, refY: 5, markerWidth: 6, markerHeight: 6, orient: 'auto-start-reverse'});
+    arrow.append(svg('path', {d: 'M 1 1 L 9 5 L 1 9', fill: 'none', stroke: '#78aef8', 'stroke-width': 1.3})); defs.append(arrow); lines.append(defs);
+    const pathIds = new Set(lineage(graph.nodes, selected || graph.current).map(node => node.id));
+    const links = graph.edges.filter(edge => by(edge.to)?.parentId !== edge.from && by(edge.from)?.parentId !== edge.to).map(edge => ({...edge, hierarchy: false}));
+    for (const node of graph.nodes) if (node.parentId && by(node.parentId) && canParent(graph.nodes, node.id, node.parentId)) links.push({from: node.parentId, to: node.id, hierarchy: true});
+    for (const edge of links) {
+      const a = by(edge.from), b = by(edge.to);
+      if (!a || !b || visual(a) === 'object' || visual(b) === 'object') continue;
+      const ac = at(a), bc = at(b); ac.y += dims(a).h / 2; bc.y += dims(b).h / 2;
+      const p = anchor(a, bc), q = anchor(b, ac), mx = (p.x + q.x) / 2, my = (p.y + q.y) / 2;
+      const active = edge.hierarchy && pathIds.has(a.id) && pathIds.has(b.id);
+      const opened = !edge.hierarchy && panels.has('edge:' + edge.id);
+      const curve = edge.hierarchy ? `M ${p.x} ${p.y} C ${p.x} ${my} ${q.x} ${my} ${q.x} ${q.y}` : `M ${p.x} ${p.y} C ${mx} ${p.y} ${mx} ${q.y} ${q.x} ${q.y}`;
+      const line = svg('path', {d: curve, fill: 'none', stroke: opened || active ? '#78aef8' : edge.hierarchy ? '#64768d' : '#484851', 'stroke-width': active || opened ? 2 : edge.hierarchy ? 1.5 : 1, 'data-kind': edge.hierarchy ? 'context' : 'association'});
+      if (edge.hierarchy) line.setAttribute('marker-end', 'url(#context-arrow)'); else line.setAttribute('stroke-dasharray', '4 5');
+      line.style.opacity = String(Math.min(a.opacity ?? 1, b.opacity ?? 1) * (edge.hierarchy || opened ? 1 : .45)); lines.append(line);
+      if (edge.label && view.z >= .65 && visual(a) === 'full' && visual(b) === 'full') {
+        const text = svg('text', {x: mx, y: my - 6, fill: '#9999a5', 'font-size': 11, 'text-anchor': 'middle'}); text.textContent = edge.label; lines.append(text);
+      }
+    }
+    for (const node of graph.nodes) {
+      if (visual(node) === 'object') continue;
+      const point = at(node), size = dims(node), button = document.createElement('button');
+      button.type = 'button'; button.className = 'node'; button.dataset.id = node.id;
+      for (const [key, value] of Object.entries({current: node.id === graph.current, selected: node.id === selected, source: node.id === source, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
+      button.setAttribute('aria-label', label(node));
+      Object.assign(button.style, {left: point.x - size.w / 2 + 'px', top: point.y + 'px', width: size.w + 'px', height: size.h + 'px', color: node.textColor || '#eeeef1', opacity: String(node.opacity ?? 1)});
+      const image = svg('svg', {viewBox: '0 0 100 100', preserveAspectRatio: 'none'}), shape = svg('path', {d: shapePath(node), class: 'node-shape'});
+      shape.style.fill = node.background || (node.id === graph.current ? '#222936' : '#17171b'); image.append(shape); button.append(image);
+      const copy = document.createElement('span'), title = document.createElement('strong'); copy.className = 'node-copy'; copy.style.fontSize = Math.max(9, Math.min(15, 13 * view.z)) + 'px'; title.textContent = label(node); copy.append(title);
+      if (view.z >= .65 && visual(node) === 'full' && (node.mark || node.id === graph.current)) { const mark = document.createElement('small'); mark.textContent = node.id === graph.current ? '手上這件事' : node.mark; copy.append(mark); }
+      button.append(copy); button.addEventListener('click', event => { if (event.detail === 0) select(node.id); }); layer.append(button);
+      if (node.id === selected) {
+        const handle = document.createElement('button'); handle.className = 'resize-handle'; handle.dataset.resize = node.id; handle.type = 'button'; handle.setAttribute('aria-label', '拖曳調整物件大小'); handle.style.left = point.x + size.w / 2 - 5 + 'px'; handle.style.top = point.y + size.h - 5 + 'px'; layer.append(handle);
+      }
+    }
+    $('#scale').textContent = Math.round(view.z * 100) + '%'; syncPanels();
+  }
+  function overview() {
+    const nodes = graph.nodes.filter(node => visual(node) !== 'object'), bounds = canvas.getBoundingClientRect();
+    if (!nodes.length) { view = {x: bounds.width / 2, y: bounds.height / 2, z: .6}; draw(); return; }
+    const left = Math.min(...nodes.map(node => node.x - baseSize(node).w / 2)), right = Math.max(...nodes.map(node => node.x + baseSize(node).w / 2));
+    const top = Math.min(...nodes.map(node => node.y)), bottom = Math.max(...nodes.map(node => node.y + baseSize(node).h));
+    view.z = Math.max(.15, Math.min(1, (bounds.width - 100) / Math.max(1, right - left), (bounds.height - 90) / Math.max(1, bottom - top)));
+    view.x = bounds.width / 2 - (left + right) * view.z / 2; view.y = 40 - top * view.z; draw();
+  }
+  function zoomAt(x, y, factor) {
+    const old = view.z, zoom = Math.max(.15, Math.min(2, old * factor));
+    view.x = x - (x - view.x) * zoom / old; view.y = y - (y - view.y) * zoom / old; view.z = zoom; draw();
+  }
+  function positionPanel(panel) { const point = at(panel); panel.element.style.left = point.x + 'px'; panel.element.style.top = point.y + 'px'; }
+  function raise(panel) { panel.element.style.zIndex = String(++panelOrder); }
+  function closePanel(key) {
+    const panel = panels.get(key); if (!panel) return;
+    // Removing a focused field can synchronously dispatch blur/change events.
+    // Retire the panel first so those events cannot try to remove it again.
+    panels.delete(key);
+    if (panel.kind === 'node') revealed.delete(panel.id);
+    panel.element.remove();
+  }
+  function openPanel(kind, id, restored) {
+    const key = kind + ':' + id, existing = panels.get(key);
+    if (existing) {
+      const rect = existing.element.getBoundingClientRect(), bounds = canvas.getBoundingClientRect();
+      if (rect.left < bounds.left + 12 || rect.right > bounds.right - 12 || rect.top < bounds.top + 12 || rect.top > bounds.bottom - 80) {
+        const point = at(kind === 'node' ? by(id) : by(edgeBy(id).from));
+        existing.x = (Math.max(12, Math.min(bounds.width - 316, point.x + 24)) - view.x) / view.z;
+        existing.y = (Math.max(12, Math.min(bounds.height - 220, point.y)) - view.y) / view.z;
+        positionPanel(existing);
+      }
+      raise(existing); return existing;
+    }
+    const node = kind === 'node' ? by(id) : by(edgeBy(id)?.from);
+    if (!node || visual(node) === 'object') return null;
+    if (kind === 'edge' && visual(by(edgeBy(id)?.to)) === 'object') return null;
+    const element = document.createElement('section'); element.className = 'object-panel'; element.dataset.panelId = id; element.dataset.kind = kind; element.setAttribute('aria-label', kind === 'node' ? '物件編輯面板' : '連線編輯面板');
+    element.append($('#' + kind + '-panel-template').content.cloneNode(true));
+    const bounds = canvas.getBoundingClientRect(), point = at(node), size = dims(node);
+    let x = point.x + size.w / 2 + 14, y = point.y;
+    if (x + 304 > bounds.width - 12) x = point.x - size.w / 2 - 318;
+    x = Math.max(12, Math.min(bounds.width - 316, x)); y = Math.max(12, Math.min(bounds.height - 220, y));
+    for (const other of panels.values()) { const spot = at(other); if (Math.abs(spot.x - x) < 24 && Math.abs(spot.y - y) < 24) { x = Math.max(12, Math.min(bounds.width - 316, x + 36)); y += 36; } }
+    const panel = {kind, id, element, x: restored?.x ?? (x - view.x) / view.z, y: restored?.y ?? (y - view.y) / view.z};
+    panels.set(key, panel); panelLayer.append(element); raise(panel);
+    element.addEventListener('pointerdown', () => raise(panel));
+    element.addEventListener('input', event => editPanel(panel, event));
+    element.addEventListener('change', event => editPanel(panel, event));
+    element.addEventListener('click', event => panelAction(panel, event));
+    element.querySelector('.panel-heading').addEventListener('pointerdown', event => {
+      if (event.button !== 0 || event.target.closest('button')) return;
+      event.preventDefault(); event.stopPropagation(); raise(panel);
+      gesture = {id: event.pointerId, type: 'panel', key, sx: event.clientX, sy: event.clientY, x: panel.x, y: panel.y, moved: false};
+      event.currentTarget.setPointerCapture(event.pointerId);
+    });
+    syncPanels(); return panel;
+  }
+  function setField(panel, name, value, disabled = false) {
+    const field = panel.element.querySelector(`[data-field="${name}"]`);
+    if (!field) return;
+    if (field.value !== String(value)) field.value = String(value);
+    field.disabled = disabled;
+  }
+  function syncPanels() {
+    for (const [key, panel] of panels) {
+      const node = panel.kind === 'node' ? by(panel.id) : null, edge = panel.kind === 'edge' ? edgeBy(panel.id) : null;
+      if ((!node && !edge) || node && visual(node) === 'object' || edge && (visual(by(edge.from)) === 'object' || visual(by(edge.to)) === 'object')) { closePanel(key); continue; }
+      positionPanel(panel);
+      if (edge) {
+        const a = by(edge.from), b = by(edge.to), masked = visual(a) !== 'full' || visual(b) !== 'full';
+        panel.element.querySelector('[data-heading]').textContent = label(a) + ' ↔ ' + label(b);
+        setField(panel, 'edgeLabel', masked ? '[視覺遮蔽]' : edge.label || '', masked); continue;
+      }
+      const masked = visual(node) !== 'full', size = baseSize(node);
+      panel.element.querySelector('[data-heading]').textContent = label(node);
+      setField(panel, 'title', masked ? '[視覺遮蔽]' : node.title || '', masked); setField(panel, 'note', masked ? '[視覺遮蔽]' : node.note || '', masked);
+      panel.element.querySelector('[data-action="reveal"]').hidden = !masked;
+      for (const [name, value] of Object.entries({shape: node.shape, background: node.background || '#17171b', textColor: node.textColor || '#eeeef1', width: Math.round(size.w), height: Math.round(size.h), opacity: Math.round((node.opacity ?? 1) * 100), aiVisibility: node.aiVisibility || 'full', visualVisibility: node.visualVisibility || 'full'})) setField(panel, name, value);
+      panel.element.querySelector('[data-opacity]').textContent = Math.round((node.opacity ?? 1) * 100) + '%';
+      const options = [{id: '', text: '最外層（沒有上層）'}];
+      for (const {node: item, depth} of outline(graph.nodes.filter(item => visual(item) !== 'object'))) if (canParent(graph.nodes, node.id, item.id)) options.push({id: item.id, text: '　'.repeat(depth) + label(item)});
+      if (node.parentId && !options.some(option => option.id === node.parentId)) options.push({id: node.parentId, text: '已隱藏的上層'});
+      const parent = panel.element.querySelector('[data-field="parentId"]'), signature = JSON.stringify(options);
+      if (parent.dataset.options !== signature) { parent.replaceChildren(); for (const option of options) { const element = document.createElement('option'); element.value = option.id; element.textContent = option.text; parent.append(element); } parent.dataset.options = signature; }
+      setField(panel, 'parentId', node.parentId || '');
+      const related = panel.element.querySelector('[data-related]'); related.replaceChildren();
+      for (const relation of graph.edges.filter(edge => edge.from === node.id || edge.to === node.id)) {
+        const other = by(relation.from === node.id ? relation.to : relation.from); if (visual(other) === 'object') continue;
+        const button = document.createElement('button'); button.textContent = label(other); button.type = 'button'; button.addEventListener('click', () => { openPanel('edge', relation.id); draw(); save(); }); related.append(button);
+      }
+    }
+  }
+  function editPanel(panel, event) {
+    if (panels.get(panel.kind + ':' + panel.id) !== panel) return;
+    const field = event.target.closest('[data-field]'); if (!field || field.disabled) return;
+    const name = field.dataset.field;
+    if (event.type === 'input' && ['parentId', 'shape', 'aiVisibility', 'visualVisibility', 'width', 'height'].includes(name)) return;
+    if (panel.kind === 'edge') { const edge = edgeBy(panel.id); if (edge && name === 'edgeLabel') edge.label = field.value; draw(); save(); return; }
+    const node = by(panel.id); if (!node) return;
+    if (name === 'parentId') { if (!canParent(graph.nodes, node.id, field.value)) return; node.parentId = field.value || null; }
+    else if (name === 'width' || name === 'height') { const value = Number(field.value); if (!Number.isFinite(value)) return; node[name] = Math.round(Math.max(name === 'width' ? 70 : 50, Math.min(name === 'width' ? 600 : 500, value))); if (node.shape === 'circle') node.width = node.height = node[name]; }
+    else if (name === 'opacity') node.opacity = Number(field.value) / 100;
+    else if (name === 'shape') { node.shape = field.value; delete node.width; delete node.height; }
+    else { node[name] = field.value; if (name === 'visualVisibility') revealed.delete(node.id); }
+    draw(); save();
+  }
+  function panelAction(panel, event) {
+    const action = event.target.closest('[data-action]')?.dataset.action; if (!action) return;
+    if (action === 'close') closePanel(panel.kind + ':' + panel.id);
+    const node = panel.kind === 'node' ? by(panel.id) : null;
+    if (action === 'reveal' && node) revealed.add(node.id);
+    if (action === 'connect' && node) { source = source === node.id ? null : node.id; $('#hint').textContent = source ? '點另一個物件來連線；Esc 取消' : '右鍵選單 · 中鍵移動 · 左鍵拖物件 · 點物件開面板'; }
+    if (action === 'focus' && node) graph.current = node.id;
+    if (action === 'delete' && node) {
+      for (const child of graph.nodes) if (child.parentId === node.id) child.parentId = node.parentId || null;
+      graph.nodes = graph.nodes.filter(item => item.id !== node.id); graph.edges = graph.edges.filter(edge => edge.from !== node.id && edge.to !== node.id);
+      if (graph.current === node.id) graph.current = null; if (selected === node.id) selected = null; if (source === node.id) source = null;
+    }
+    if (action === 'edge-delete') graph.edges = graph.edges.filter(edge => edge.id !== panel.id);
+    draw(); save();
+  }
+  function select(id) {
+    if (source && source !== id) { if (!graph.edges.some(edge => edge.from === source && edge.to === id || edge.to === source && edge.from === id)) graph.edges.push({id: crypto.randomUUID(), from: source, to: id, label: ''}); source = null; $('#hint').textContent = '右鍵選單 · 中鍵移動 · 左鍵拖物件 · 點物件開面板'; }
+    selected = id; openPanel('node', id); draw(); save();
+  }
+  function create(point) {
+    const node = {id: crypto.randomUUID(), title: '新念頭', note: '', shape: 'ellipse', x: point.x, y: point.y - 50};
+    graph.nodes.push(node); selected = node.id; const panel = openPanel('node', node.id); draw(); save();
+    const field = panel?.element.querySelector('[data-field="title"]'); field?.focus(); field?.select();
+  }
+  function arrange() {
+    for (const position of layout(graph.nodes)) {
+      const node = by(position.id), panel = panels.get('node:' + node.id);
+      if (panel) { panel.x += position.x - node.x; panel.y += position.y - node.y; }
+      Object.assign(node, position);
+    }
+    graph.layoutRevision = 'top-down-2026-10-12'; overview(); save();
+  }
+  function dismissMenu() { menu.hidden = true; menuPoint = null; }
+  canvas.addEventListener('contextmenu', event => {
+    if (event.target.closest('.object-panel')) return;
+    event.preventDefault(); if (event.target.closest('.zoom')) return;
+    const bounds = canvas.getBoundingClientRect(), x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+    menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z}; menu.hidden = false;
+    menu.style.left = Math.max(6, Math.min(bounds.width - menu.offsetWidth - 6, x)) + 'px'; menu.style.top = Math.max(6, Math.min(bounds.height - menu.offsetHeight - 6, y)) + 'px';
+  });
+  menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'arrange') arrange(); });
+  canvas.addEventListener('pointerdown', event => {
+    if (event.target.closest('#context-menu,.zoom') || event.button !== 0 && event.button !== 1) return;
+    dismissMenu();
+    if (event.button === 0 && event.target.closest('.object-panel')) return;
+    event.preventDefault(); gesture = null;
+    const node = event.target.closest('.node'), resize = event.target.closest('[data-resize]');
+    if (event.button === 1) { gesture = {id: event.pointerId, type: 'pan', sx: event.clientX, sy: event.clientY, x: view.x, y: view.y, moved: false}; canvas.classList.add('panning'); }
+    else if (resize) { const item = by(resize.dataset.resize), size = baseSize(item); gesture = {id: event.pointerId, type: 'resize', node: item.id, sx: event.clientX, sy: event.clientY, w: size.w, h: size.h, moved: false}; }
+    else if (node) { const item = by(node.dataset.id); gesture = {id: event.pointerId, type: 'node', node: item.id, sx: event.clientX, sy: event.clientY, x: item.x, y: item.y, moved: false}; }
+    else { selected = null; draw(); return; }
+    canvas.setPointerCapture(event.pointerId);
+  });
+  window.addEventListener('pointermove', event => {
+    if (!gesture || gesture.id !== event.pointerId) return;
+    const dx = event.clientX - gesture.sx, dy = event.clientY - gesture.sy; if (Math.hypot(dx, dy) > 3) gesture.moved = true; if (!gesture.moved) return;
+    if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
+    else if (gesture.type === 'panel') { const panel = panels.get(gesture.key); if (!panel) return; panel.x = gesture.x + dx / view.z; panel.y = gesture.y + dy / view.z; }
+    else if (gesture.type === 'resize') { const node = by(gesture.node); node.width = Math.round(Math.max(70, Math.min(600, gesture.w + dx / view.z))); node.height = Math.round(Math.max(50, Math.min(500, gesture.h + dy / view.z))); if (node.shape === 'circle') node.width = node.height = Math.max(node.width, node.height); }
+    else if (!source) { const node = by(gesture.node), panel = panels.get('node:' + node.id), nx = gesture.x + dx / view.z, ny = gesture.y + dy / view.z; if (panel) { panel.x += nx - node.x; panel.y += ny - node.y; } node.x = nx; node.y = ny; }
+    draw();
+  });
+  function finish(event) {
+    if (!gesture || gesture.id !== event.pointerId) return;
+    const previous = gesture; gesture = null; canvas.classList.remove('panning');
+    if (previous.moved) save(); else if (previous.type === 'node' && event.type === 'pointerup') select(previous.node);
+  }
+  window.addEventListener('pointerup', finish); window.addEventListener('pointercancel', finish);
+  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; canvas.classList.remove('panning'); save(); } });
+  canvas.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
+  canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
+  $('#ai-mode').addEventListener('change', event => { settings.aiMode = event.target.value; save(); });
+  $('#visual-mode').addEventListener('change', event => { settings.visualMode = event.target.value; revealed.clear(); draw(); save(); });
+  document.addEventListener('pointerdown', event => { if (!canvas.contains(event.target)) dismissMenu(); });
+  document.addEventListener('click', event => { if (event.target.closest('.object-panel')) return; const action = event.target.closest('[data-action]')?.dataset.action; if (action === 'minus' || action === 'plus') { const bounds = canvas.getBoundingClientRect(); zoomAt(bounds.width / 2, bounds.height / 2, action === 'plus' ? 1.2 : 1 / 1.2); save(); } });
+  window.addEventListener('keydown', event => {
+    if (event.key === 'Escape') { dismissMenu(); source = null; selected = null; revealed.clear(); draw(); return; }
+    if (event.target.closest('input,textarea,select') || event.ctrlKey || event.metaKey || event.altKey) return;
+    if (event.key.toLowerCase() === 'f') { overview(); save(); }
+  });
+  window.addEventListener('beforeunload', () => { if (ready) { clearTimeout(saveTimer); window.mapStore.saveNow(payload()); } });
+  try {
+    const state = await window.mapStore.load(); graph = state.graph;
+    if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) throw new Error('地圖格式無效');
+    for (const node of graph.nodes) if (!['circle', 'ellipse', 'diamond', 'rounded', 'rectangle'].includes(node.shape)) node.shape = 'ellipse';
+    settings = {...settings, ...state.settings}; $('#ai-mode').value = settings.aiMode; $('#visual-mode').value = settings.visualMode;
+    if (state.view && ['x', 'y', 'z'].every(key => Number.isFinite(state.view[key])) && state.view.z > 0) { view = state.view; draw(); } else overview();
+    for (const panel of state.panels || []) if (['node', 'edge'].includes(panel.kind) && Number.isFinite(panel.x) && Number.isFinite(panel.y)) openPanel(panel.kind, panel.id, panel);
+    ready = true; $('#save-status').textContent = '本機加密儲存 · AI 版本已產生'; new ResizeObserver(() => draw()).observe(canvas);
+  } catch (error) { $('#save-status').textContent = '載入失敗：' + error.message; canvas.style.pointerEvents = 'none'; }
 })();
