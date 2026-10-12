@@ -146,10 +146,12 @@ git remote add/set-url origin
 git add -A
 git commit -m "chore: sync data"
 git branch -M main
+git fetch --no-tags origin main
+# Fast-forward or merge independent device edits without changing conflicted files.
 git push -u origin main
 ```
 
-Floade does not force-push. A repository with conflicting remote history produces a failure notification instead of overwriting the remote.
+Floade does not force-push. Push fetches the remote and merges independent device edits while preserving both commit histories. If both devices change the same content, it leaves the working files intact and reports a conflict for resolution. Files edited during merge calculation also stop the operation so newer typing is retained. Safe automatic merging requires Git 2.38 or newer.
 
 On Windows, the installed app starts in the background at sign-in by default. Use **Settings → Start with Windows** to turn this on or off; the setting persists across launches. The automatic push uses the same safe Git flow as manual **Push** and only attempts folders with local changes. If Floade is closed or the computer is off at 20:00, it tries once after the next launch that day. Failed pushes show an error and can be retried manually.
 
