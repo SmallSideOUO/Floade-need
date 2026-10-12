@@ -12,14 +12,14 @@ async page => {
   check(initial.graph.nodes.filter(node=>node.id!=='world').every(node=>node.y>root.y),'Primary purpose is not at the top');
   for(const node of initial.graph.nodes.filter(node=>node.parentId))check(node.y>initial.graph.nodes.find(parent=>parent.id===node.parentId).y,'Child is above parent');
   const cb=await page.locator('#canvas').boundingBox(),world=page.locator('.node[data-id="world"]'),before=await world.boundingBox();
-  await page.mouse.move(cb.x+20,cb.y+20);await page.mouse.down({button:'middle'});await page.mouse.move(cb.x+70,cb.y+55,{steps:6});await page.mouse.up({button:'middle'});
+  await page.mouse.move(cb.x+20,cb.y+200);await page.mouse.down({button:'middle'});await page.mouse.move(cb.x+70,cb.y+235,{steps:6});await page.mouse.up({button:'middle'});
   const after=await world.boundingBox();check(Math.abs(after.x-before.x-50)<2&&Math.abs(after.y-before.y-35)<2,'Middle pan failed');
-  await page.mouse.move(cb.x+20,cb.y+20);await page.mouse.down();await page.mouse.move(cb.x+60,cb.y+45,{steps:4});await page.mouse.up();check(Math.abs((await world.boundingBox()).x-after.x)<1,'Left blank pans canvas');
-  await page.mouse.click(cb.x+80,cb.y+100,{button:'right'});check(await page.locator('.node').count()===10,'Right click created without menu choice');
+  await page.mouse.move(cb.x+20,cb.y+200);await page.mouse.down();await page.mouse.move(cb.x+60,cb.y+225,{steps:4});await page.mouse.up();check(Math.abs((await world.boundingBox()).x-after.x)<1,'Left blank pans canvas');
+  await page.mouse.click(cb.x+80,cb.y+250,{button:'right'});check(await page.locator('.node').count()===10,'Right click created without menu choice');
   check(await page.locator('#context-menu').isVisible(),'Context menu missing');await page.keyboard.press('Escape');check(await page.locator('#context-menu').isHidden(),'Escape did not dismiss menu');
-  await page.mouse.click(cb.x+80,cb.y+100,{button:'right'});await page.locator('[data-menu="create"]').click();
+  await page.mouse.click(cb.x+80,cb.y+250,{button:'right'});await page.locator('[data-menu="create"]').click();
   const id=await page.locator('.node[data-selected="true"]').getAttribute('data-id'),created=page.locator('.node[data-id="'+id+'"]'),box=await created.boundingBox();
-  check(await page.locator('.node').count()===11,'Menu creation failed');check(Math.abs(box.x+box.width/2-cb.x-80)<2&&Math.abs(box.y+box.height/2-cb.y-100)<2,'Creation moved from right-click position');
+  check(await page.locator('.node').count()===11,'Menu creation failed');check(Math.abs(box.x+box.width/2-cb.x-80)<2&&Math.abs(box.y+box.height/2-cb.y-250)<2,'Creation moved from right-click position');
   await field(id,'title').fill('UI_PRIVATE_TITLE_8076');await field(id,'note').fill('UI_PRIVATE_NOTE_2319');
   // Open another object while retaining the first panel, then edit the first.
   await world.click();check(await page.locator('.object-panel[data-kind="node"]').count()===2,'Second object replaced first panel');
@@ -27,7 +27,7 @@ async page => {
   const floating=await panel(id).boundingBox(),heading=await panel(id).locator('.panel-heading').boundingBox();
   await page.mouse.move(heading.x+30,heading.y+12);await page.mouse.down();await page.mouse.move(heading.x+85,heading.y+40,{steps:6});await page.mouse.up();
   const dragged=await panel(id).boundingBox();check(Math.abs(dragged.x-floating.x-55)<2&&Math.abs(dragged.y-floating.y-28)<2,'Floating panel drag failed');
-  const panStart=await panel(id).boundingBox();await page.mouse.move(cb.x+20,cb.y+20);await page.mouse.down({button:'middle'});await page.mouse.move(cb.x+45,cb.y+35,{steps:5});await page.mouse.up({button:'middle'});
+  const panStart=await panel(id).boundingBox();await page.mouse.move(cb.x+20,cb.y+200);await page.mouse.down({button:'middle'});await page.mouse.move(cb.x+45,cb.y+215,{steps:5});await page.mouse.up({button:'middle'});
   const panEnd=await panel(id).boundingBox();check(Math.abs(panEnd.x-panStart.x-25)<2&&Math.abs(panEnd.y-panStart.y-15)<2,'Panel did not move with canvas');
   await panel('world').locator('[data-action="close"]').click();check(await panel(id).count()===1&&await panel('world').count()===0,'Close removed other panels');
   await panel(id).locator('summary').click();await field(id,'shape').selectOption('rounded');

@@ -1,0 +1,40 @@
+async page => {
+  // Run only against a synthetic --map-profile, never the user's private map.
+  const errors=[];page.on('pageerror',error=>errors.push(error.message));
+  const check=(condition,message)=>{if(!condition)throw Error(message)};
+  const state=()=>page.evaluate(()=>window.mapStore.load());
+  await page.locator('.minimap-node').first().waitFor();
+  while(await page.locator('.object-panel').count())await page.locator('.object-panel [data-action="close"]').last().click();
+  const initial=await state(),map=page.locator('#minimap');
+  check(await page.locator('.minimap-node').count()===initial.graph.nodes.length,'Overview omits objects');
+  check(await page.locator('.minimap-edge').count()===initial.graph.edges.length,'Overview omits edges');
+  check(await map.locator('text').count()===0,'Miniature text should not expose content');
+  const shape=page.locator('.minimap-node').last(),target=await shape.boundingBox();
+  await page.mouse.click(target.x+target.width/2,target.y+target.height/2);await page.waitForTimeout(180);
+  const centered=await state();check(centered.view.z===initial.view.z,'Navigation changed zoom');
+  check(Math.hypot(centered.view.x-initial.view.x,centered.view.y-initial.view.y)>10,'Click did not navigate');
+  check(JSON.stringify(centered.graph)===JSON.stringify(initial.graph),'Navigation changed graph');
+  const frame=await page.locator('.minimap-viewport').boundingBox();
+  await page.mouse.move(frame.x+frame.width/2,frame.y+frame.height/2);await page.mouse.down();
+  await page.mouse.move(frame.x+frame.width/2+16,frame.y+frame.height/2+9,{steps:5});await page.mouse.up();await page.waitForTimeout(180);
+  const dragged=await state();check(dragged.view.x<centered.view.x&&dragged.view.y<centered.view.y,'Viewport drag direction is wrong');
+  await map.focus();await page.keyboard.press('ArrowRight');await page.waitForTimeout(180);
+  const keyboard=await state();check(Math.abs(keyboard.view.x-dragged.view.x+80)<1,'Keyboard navigation failed');
+  const area=await page.locator('#canvas').boundingBox();
+  await page.mouse.move(area.x+area.width/2,area.y+area.height/2);const oldFrame=await page.locator('.minimap-viewport').getAttribute('width');
+  await page.mouse.wheel(0,-400);await page.waitForTimeout(180);check(await page.locator('.minimap-viewport').getAttribute('width')!==oldFrame,'Zoom did not update viewport');
+  const count=await page.locator('.node').count(),mb=await map.boundingBox();
+  await page.mouse.click(mb.x+10,mb.y+10,{button:'right'});check(await page.locator('#context-menu').isHidden(),'Minimap opens creation menu');check(await page.locator('.node').count()===count,'Minimap creates objects');
+  await page.keyboard.press('f');await page.waitForTimeout(180);
+  const hiddenId=initial.graph.nodes[0].id;await page.locator('.node[data-id="'+hiddenId+'"]').click();
+  const panel=page.locator('.object-panel[data-kind="node"][data-panel-id="'+hiddenId+'"]');
+  await panel.locator('[data-field="visualVisibility"]').selectOption('object');
+  check(await page.locator('.minimap-node[data-id="'+hiddenId+'"]').count()===0,'Visually hidden object leaks into minimap');
+  check(await page.locator('.minimap-node').count()===await page.locator('.node').count(),'Minimap and visual privacy disagree');
+  await page.waitForTimeout(180);const saved=await state();await page.reload();await page.locator('.minimap-node').first().waitFor();
+  const restored=await state();check(JSON.stringify(restored.view)===JSON.stringify(saved.view),'Navigation does not persist');
+  check(await page.locator('.minimap-node[data-id="'+hiddenId+'"]').count()===0,'Reload exposes hidden object');
+  check(!(await map.evaluate(element=>element.innerHTML)).includes('NaN'),'Invalid minimap coordinates');
+  check(errors.length===0,'Renderer errors: '+errors.join(';'));
+  return {passed:true,checks:['full graph overview','no object text','click navigation','viewport drag','keyboard navigation','zoom synchronization','context menu isolation','visual privacy','reload persistence']};
+}

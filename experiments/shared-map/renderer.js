@@ -2,6 +2,7 @@
 (async () => {
   const $ = selector => document.querySelector(selector);
   const canvas = $('#canvas'), layer = $('#nodes'), lines = $('#lines'), panelLayer = $('#panels'), menu = $('#context-menu');
+  const minimap = $('#minimap'); let miniProjection;
   const {ports, style, removeEdge, removeNode, shapePath, boxOf, routes} = window.mapConnections;
   let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
   let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0, revision = 0, dirty = false, apiBusy = false;
@@ -78,8 +79,53 @@
         const handle = document.createElement('button'); handle.className = 'resize-handle'; handle.dataset.resize = node.id; handle.type = 'button'; handle.setAttribute('aria-label', '拖曳調整物件大小'); handle.style.left = point.x + size.w / 2 - 5 + 'px'; handle.style.top = point.y + size.h - 5 + 'px'; layer.append(handle);
       }
     }
-    $('#scale').textContent = Math.round(view.z * 100) + '%'; syncPanels();
+    $('#scale').textContent = Math.round(view.z * 100) + '%'; syncPanels(); drawMinimap(bounds);
   }
+  function drawMinimap(bounds) {
+    const visible = graph.nodes.filter(node => visual(node) !== 'object');
+    const viewport = {left: -view.x / view.z, top: -view.y / view.z, w: bounds.width / view.z, h: bounds.height / view.z};
+    let left = viewport.left, right = left + viewport.w, top = viewport.top, bottom = top + viewport.h;
+    for (const node of visible) { const box = boxOf(node); left = Math.min(left, box.x); right = Math.max(right, box.x + box.w); top = Math.min(top, box.y); bottom = Math.max(bottom, box.y + box.h); }
+    for (const route of routeCache.values()) for (const point of route.points) { left = Math.min(left, point.x); right = Math.max(right, point.x); top = Math.min(top, point.y); bottom = Math.max(bottom, point.y); }
+    const scale = Math.min(180 / Math.max(1, right - left), 112 / Math.max(1, bottom - top));
+    const x = 100 - (left + right) * scale / 2, y = 66 - (top + bottom) * scale / 2;
+    miniProjection = {x, y, scale}; minimap.replaceChildren();
+    const scene = svg('g', {transform: `translate(${x} ${y}) scale(${scale})`}); minimap.append(scene);
+    for (const edge of graph.edges) {
+      const route = routeCache.get(edge.id); if (!route) continue;
+      const appearance = style(edge), line = svg('path', {d: route.d, fill: 'none', stroke: appearance.color, 'stroke-width': .7, 'vector-effect': 'non-scaling-stroke', class: 'minimap-edge'});
+      line.style.opacity = String(Math.min(by(edge.from).opacity ?? 1, by(edge.to).opacity ?? 1)); scene.append(line);
+      if (appearance.lineStyle === 'dashed') line.setAttribute('stroke-dasharray', '2 2');
+    }
+    for (const node of visible) {
+      const box = boxOf(node), shape = svg('path', {d: shapePath(node), transform: `translate(${box.x} ${box.y}) scale(${box.w / 100} ${box.h / 100})`, fill: node.background || '#17171b', stroke: node.id === selected ? '#eeeef1' : '#777784', 'stroke-width': .8, 'vector-effect': 'non-scaling-stroke', class: 'minimap-node', 'data-id': node.id});
+      shape.style.opacity = String(node.opacity ?? 1); scene.append(shape);
+    }
+    // Keep the viewport in minimap pixels so its border does not shrink.
+    minimap.append(svg('rect', {x: x + viewport.left * scale, y: y + viewport.top * scale, width: viewport.w * scale, height: viewport.h * scale, rx: 2, class: 'minimap-viewport'}));
+  }
+  function miniPoint(event, projection = miniProjection) {
+    const bounds = minimap.getBoundingClientRect();
+    return {x: ((event.clientX - bounds.left) * 200 / bounds.width - projection.x) / projection.scale, y: ((event.clientY - bounds.top) * 132 / bounds.height - projection.y) / projection.scale};
+  }
+  function centerOn(point) { const bounds = canvas.getBoundingClientRect(); view.x = bounds.width / 2 - point.x * view.z; view.y = bounds.height / 2 - point.y * view.z; }
+  minimap.addEventListener('pointerdown', event => {
+    event.stopPropagation(); if (event.button !== 0 || apiBusy || !ready || gesture) return;
+    event.preventDefault(); dismissMenu(); minimap.focus();
+    const point = miniPoint(event), bounds = canvas.getBoundingClientRect();
+    const inside = point.x >= -view.x / view.z && point.x <= (bounds.width - view.x) / view.z && point.y >= -view.y / view.z && point.y <= (bounds.height - view.y) / view.z;
+    gesture = {id: event.pointerId, type: 'minimap', sx: event.clientX, sy: event.clientY, projection: {...miniProjection}, origin: point, x: view.x, y: view.y, moved: false};
+    if (!inside) { centerOn(point); gesture.x = view.x; gesture.y = view.y; draw(); }
+    minimap.dataset.dragging = 'true'; minimap.setPointerCapture(event.pointerId);
+  });
+  minimap.addEventListener('contextmenu', event => { event.preventDefault(); event.stopPropagation(); });
+  minimap.addEventListener('wheel', event => { event.preventDefault(); event.stopPropagation(); });
+  minimap.addEventListener('keydown', event => {
+    if (apiBusy || !ready) return;
+    const directions = {ArrowLeft: [1, 0], ArrowRight: [-1, 0], ArrowUp: [0, 1], ArrowDown: [0, -1]};
+    if (!directions[event.key]) return;
+    event.preventDefault(); event.stopPropagation(); view.x += directions[event.key][0] * 80; view.y += directions[event.key][1] * 80; draw(); save();
+  });
   function overview() {
     const nodes = graph.nodes.filter(node => visual(node) !== 'object'), bounds = canvas.getBoundingClientRect();
     if (!nodes.length) { view = {x: bounds.width / 2, y: bounds.height / 2, z: .6}; draw(); return; }
@@ -215,7 +261,7 @@
   function dismissMenu() { menu.hidden = true; menuPoint = null; }
   canvas.addEventListener('contextmenu', event => {
     if (event.target.closest('.object-panel')) return;
-    event.preventDefault(); if (event.target.closest('.zoom')) return;
+    event.preventDefault(); if (event.target.closest('.zoom,.minimap')) return;
     const bounds = canvas.getBoundingClientRect(), x = event.clientX - bounds.left, y = event.clientY - bounds.top;
     const nodeId = event.target.closest('.node')?.dataset.id;
     menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z, nodeId};
@@ -225,7 +271,7 @@
   menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'delete' && point?.nodeId) { deleteNode(point.nodeId); draw(); save(); } });
   canvas.addEventListener('pointerdown', event => {
     if (apiBusy) return;
-    if (event.target.closest('#context-menu,.zoom') || event.button !== 0 && event.button !== 1) return;
+    if (event.target.closest('#context-menu,.zoom,.minimap') || event.button !== 0 && event.button !== 1) return;
     dismissMenu();
     if (event.button === 0 && event.target.closest('.object-panel')) return;
     event.preventDefault(); gesture = null;
@@ -243,6 +289,7 @@
     const dx = event.clientX - gesture.sx, dy = event.clientY - gesture.sy; if (Math.hypot(dx, dy) > 3) gesture.moved = true; if (!gesture.moved) return;
     if (gesture.type === 'edge') return;
     if (gesture.type === 'link') { const bounds = canvas.getBoundingClientRect(); gesture.point = {x: (event.clientX - bounds.left - view.x) / view.z, y: (event.clientY - bounds.top - view.y) / view.z}; gesture.target = linkTarget(event); }
+    else if (gesture.type === 'minimap') { const point = miniPoint(event, gesture.projection); view.x = gesture.x - (point.x - gesture.origin.x) * view.z; view.y = gesture.y - (point.y - gesture.origin.y) * view.z; }
     else if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
     else if (gesture.type === 'panel') { const panel = panels.get(gesture.key); if (!panel) return; panel.x = gesture.x + dx / view.z; panel.y = gesture.y + dy / view.z; }
     else if (gesture.type === 'resize') { const node = by(gesture.node); node.width = Math.round(Math.max(70, Math.min(600, gesture.w + dx / view.z))); node.height = Math.round(Math.max(50, Math.min(500, gesture.h + dy / view.z))); if (node.shape === 'circle') node.width = node.height = Math.max(node.width, node.height); }
@@ -252,6 +299,8 @@
   function finish(event) {
     if (!gesture || gesture.id !== event.pointerId) return;
     const previous = gesture; gesture = null; canvas.classList.remove('panning');
+    delete minimap.dataset.dragging;
+    if (previous.type === 'minimap') { if (!previous.moved && event.type === 'pointerup') centerOn(miniPoint(event, previous.projection)); draw(); save(); return; }
     if (previous.type === 'link') {
       const target = linkTarget(event);
       if (event.type === 'pointerup' && previous.moved && target && target !== previous.node && visual(by(target)) !== 'object' && !graph.edges.some(edge => edge.from === previous.node && edge.to === target || edge.to === previous.node && edge.from === target)) graph.edges.push({id: crypto.randomUUID(), from: previous.node, to: target, label: '', color: '#64768d', width: 1.5, lineStyle: 'solid'});
@@ -261,9 +310,9 @@
     else if (previous.type === 'edge' && event.type === 'pointerup') { openPanel('edge', previous.edge); draw(); save(); }
   }
   window.addEventListener('pointerup', finish); window.addEventListener('pointercancel', finish);
-  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; canvas.classList.remove('panning'); draw(); save(); } });
+  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; delete minimap.dataset.dragging; canvas.classList.remove('panning'); draw(); save(); } });
   canvas.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
-  canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
+  canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu,.minimap')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
   $('#ai-mode').addEventListener('change', event => { settings.aiMode = event.target.value; save(); });
   $('#visual-mode').addEventListener('change', event => { settings.visualMode = event.target.value; revealed.clear(); draw(); save(); });
   document.addEventListener('pointerdown', event => { if (!canvas.contains(event.target)) dismissMenu(); });
