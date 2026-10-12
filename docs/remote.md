@@ -34,3 +34,23 @@ Build the engine from the pinned revision in vendor/remote/source.json using its
 Copy the resulting branded-windows-x64 folder to vendor/remote/windows-x64, then npm ci, npm run check, npm test, npm run test:preview and npm run dist:win -- --publish never. The runtime must contain its integrity manifest. Publish the exact engine source revision and runtime archive alongside the app installer, latest.yml and blockmap. See THIRD-PARTY-NOTICES.md and LICENSE for source and redistribution information.
 
 TCP, UDP and WebRTC direct-connection options are available in manual settings and remote.settings.update (tcpPunch, udpPunch, webrtc). Display/transport changes take effect on new connections. If an established direct connection resets, choose forceRelay or disable the failing punch route; an already established session is not silently migrated. Performance probes are not input-to-display measurements.
+
+## Full access and Windows service (0.1.23)
+
+The remote settings page exposes the same operations as the local API:
+
+```powershell
+& .\floade-api.ps1 -Method remote.access.grant -ParamsJson '{"deviceId":"1370592362","alias":"筆電"}'
+& .\floade-api.ps1 -Method remote.access.grant -ParamsJson '{"deviceId":"1157168970","alias":"桌機"}'
+& .\floade-api.ps1 -Method remote.access.get
+& .\floade-api.ps1 -Method remote.service.install
+& .\floade-api.ps1 -Method remote.service.status
+```
+
+Run these on each receiving computer. The full-access allowlist allows only the listed incoming IDs and uses the upstream `access-mode=full`, including keyboard, clipboard, files, audio, camera, terminal, tunnel, restart, recording, block input, privacy and printer permissions where supported. The regular per-feature checkboxes do not restrict full mode. Password authentication is retained. RustDesk's incoming ID is self-reported: this is a password-authenticated ID filter, not cryptographic device trust. Protect the password; knowing an allowed code alone never authorizes login.
+
+`remote.access.revoke` removes an ID; an enabled empty list denies all. `remote.access.disable` restores the pre-existing native access mode and ID filter. Changes apply to new incoming sessions; disconnect an existing session to revoke its current access. Native advanced settings may change the underlying policy; `effective=false` exposes that drift rather than silently claiming enforcement.
+
+`remote.service.install` verifies every bundled runtime digest and invokes the native installer, copying the engine into protected `Program Files\FloadeRemote` and installing its independent automatic LocalSystem service. Close remote sessions first. Windows UAC consent is required and cannot be bypassed through the API. The existing RustDesk service is not changed. Native installation may restart the remote engine; use `remote.start` afterward.
+
+`remote.service.status.ready` requires a running automatic LocalSystem service, the expected protected executable path and matching executable/native-library/AOT hashes. Installation request success is not proof of readiness. This service supports privileged applications, secure desktop and login-screen capture/input according to native Windows capabilities; actual end-to-end secure-desktop operation must be tested separately. It does not grant the signed-in Windows account membership in Administrators or disclose Windows credentials. Update the system service after upgrading Floade if `binaryMatchesBundle=false`.

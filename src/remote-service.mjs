@@ -2,11 +2,18 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, execFile } from 'node:child_process'
 import { createHash } from 'node:crypto'
+import { createRemoteWindowsService } from './remote-windows-service.mjs'
 
 export const remoteMethods = {
   'remote.status': { description: 'Read this device ID, native engine and connection status.', params: {} },
   'remote.metrics': { description: 'Read native FPS, decode queue and shared-channel delay samples. Delay is not input-to-display latency.', params: {} },
   'remote.start': { description: 'Start the bundled remote engine.', params: {} },
+  'remote.access.get': { description: 'Read incoming full-access device allowlist. IDs are self-reported; password authentication remains required.', params: {} },
+  'remote.access.grant': { description: 'Allow a device full remote access to THIS host; enable the allowlist and deny other IDs. Requires password. Applies to new incoming sessions.', params: { deviceId: 'numeric code', alias: 'optional device name' } },
+  'remote.access.revoke': { description: 'Remove a full-access device. An enabled empty allowlist denies all incoming sessions.', params: { deviceId: 'numeric code' } },
+  'remote.access.disable': { description: 'Disable the full-access allowlist and restore the previous native access mode and ID filter.', params: {} },
+  'remote.service.status': { description: 'Read actual Windows LocalSystem service and packaged binary readiness for UAC/login access.', params: {} },
+  'remote.service.install': { description: 'Install/update the native system service in protected Program Files. Windows UAC consent is required. Close sessions first.', params: {} },
   'remote.settings.get': { description: 'Read remote preferences and saved devices; passwords are redacted.', params: {} },
   'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, server, relayServer, serverKey, approval, verification' } },
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
@@ -41,7 +48,7 @@ const deviceCode = value => {
   return value
 }
 
-export function createRemoteService({ dataDirectory, runtimeDirectory, safeStorage, engineCall, launch = spawn }) {
+export function createRemoteService({ dataDirectory, runtimeDirectory, safeStorage, engineCall, launch = spawn, windowsService = createRemoteWindowsService(runtimeDirectory) }) {
   const file = path.join(dataDirectory, 'remote.json')
   const controlFile = path.join(process.env.APPDATA || dataDirectory, 'FloadeRemote', 'control.json')
   const executable = path.join(runtimeDirectory, 'FloadeRemote.exe')
@@ -112,6 +119,23 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     return starting
   }
   async function dispatch(method, p = {}) {
+    if (method === 'remote.service.status') return windowsService.status()
+    if (method === 'remote.service.install') {
+      const status = await start()
+      if (status.windows?.length || status.connection?.video_conn_count > 0) fail('REMOTE_BUSY', 'Close remote sessions before installing the system service.')
+      return windowsService.install()
+    }
+    if (method === 'remote.access.get') { await start(); return call('accessGet') }
+    if (['remote.access.grant', 'remote.access.revoke', 'remote.access.disable'].includes(method)) {
+      const id = method === 'remote.access.disable' ? undefined : deviceCode(p.deviceId)
+      if (p.alias !== undefined && (typeof p.alias !== 'string' || p.alias.length > 80)) fail('INVALID_PARAMS', 'alias must be at most 80 characters.')
+      await start()
+      const policy = await call('accessGet')
+      const devices = policy.devices.filter(d => d.deviceId !== id)
+      if (method === 'remote.access.grant') devices.push({ deviceId: id, alias: p.alias || policy.devices.find(d => d.deviceId === id)?.alias || '' })
+      if (devices.length > 50) fail('INVALID_PARAMS', 'At most 50 devices may be allowed.')
+      return call('accessSet', { enabled: method === 'remote.access.disable' ? false : true, devices })
+    }
     if (method === 'remote.settings.get') return publicState()
     if (method === 'remote.metrics') {
       const logs = ['FloadeRemote_rCURRENT.log', 'flutter_ffi/FloadeRemote_rCURRENT.log', 'flutter_ffi/rustdesk_rCURRENT.log'].map(name => path.join(path.dirname(controlFile), 'log', name)).filter(name => fs.existsSync(name))

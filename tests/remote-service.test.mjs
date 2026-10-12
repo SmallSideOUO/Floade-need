@@ -50,3 +50,40 @@ test('invalid connection data and unavailable protected storage never launch a s
   const busy = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory, engineCall: async () => ({ windows: [2] }) })
   await assert.rejects(busy.prepareUpdate(), { apiCode: 'REMOTE_BUSY' })
 })
+
+test('full-access API grants, updates, revokes and disables the incoming allowlist without touching passwords', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'floade-access-'))
+  t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  let policy = { enabled: false, devices: [] }
+  const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async (method, params) => {
+      if (method === 'accessGet') return structuredClone(policy)
+      if (method === 'accessSet') { policy = structuredClone(params); return policy }
+      if (method === 'status' || method === 'apply') return {}
+      throw new Error('Unexpected authentication mutation')
+    } })
+  await assert.rejects(service.dispatch('remote.access.grant', { deviceId: 'bad' }), { apiCode: 'INVALID_PARAMS' })
+  await service.dispatch('remote.access.grant', { deviceId: '1370592362', alias: 'Laptop' })
+  await service.dispatch('remote.access.grant', { deviceId: '1370592362', alias: 'My laptop' })
+  assert.deepEqual((await service.dispatch('remote.access.get')).devices, [{ deviceId: '1370592362', alias: 'My laptop' }])
+  assert.equal(policy.enabled, true)
+  await service.dispatch('remote.access.revoke', { deviceId: '1370592362' })
+  assert.deepEqual(policy, { enabled: true, devices: [] })
+  await service.dispatch('remote.access.disable')
+  assert.equal(policy.enabled, false)
+})
+
+test('system-service API exposes actual status and refuses installation during an active remote session', async t => {
+  const { directory } = fixture(t)
+  let active = true
+  let installs = 0
+  const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async method => method === 'status' ? { windows: [], connection: { video_conn_count: active ? 1 : 0 } } : {},
+    windowsService: { status: async () => ({ ready: false, installed: false }), install: async () => { installs++; return { requested: true, requiresWindowsConsent: true } } } })
+  assert.equal((await service.dispatch('remote.service.status')).ready, false)
+  await assert.rejects(service.dispatch('remote.service.install'), { apiCode: 'REMOTE_BUSY' })
+  assert.equal(installs, 0)
+  active = false
+  assert.equal((await service.dispatch('remote.service.install')).requiresWindowsConsent, true)
+  assert.equal(installs, 1)
+})

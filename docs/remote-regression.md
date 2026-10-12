@@ -43,3 +43,13 @@ The application syntax check, 44 Node tests, the Electron preview flow, three na
 GPU preferences and FPS targets are requests, not performance guarantees. Direct connectivity can fall back to relay. Diagnostics count presentation submissions and report shared-channel delay, not input-to-display latency. The per-user host covers the signed-in desktop; login-screen/UAC access requires native service installation with administrator privileges.
 
 The managed engine stays online after its final remote window hides. Status reports active session windows, so inactive reusable windows do not block the updater. Direct connection remains the default and the requested profile on both tested devices. Earlier TCP/WebRTC interruptions coincided with a user who moved, suspended or disconnected the laptop; those runs do not establish a transport defect. Relay also delivered sustained H.264 frames, but its roughly 400–500 ms shared-channel delay is not an input-to-display measurement.
+
+## 0.1.23 regression surface
+
+- `src/remote-service.mjs`: six additive API methods for incoming full-access policy and Windows service installation/status. The installation path checks active incoming/outgoing sessions; existing connection, credential, display and updater paths are retained.
+- `src/remote.html`, `src/remote.js`: manual allowlist and service controls in the existing remote settings page. Existing connection form and remembered passwords remain unchanged.
+- Native `flutter/lib/floade/control.dart`: two additive capability-authenticated dispatch cases, delegated to new `floade/access.dart`. No shared Rust structs, wire protocol, login/password validation or native platform installer code changed. The original executable/feature-off path is preserved.
+- New `src/remote-windows-service.mjs` calls the existing native installer and queries actual SCM state. This intentionally installs a separate protected automatic LocalSystem service for the requested administrator/UAC/login-screen capability; a per-user executable is never registered as a system service.
+- Package versions/source pin and the two remote documents change to ship and document the exact implementation. No Work Map, safe-Push, private repository data, legacy RustDesk service or submodule revision changes.
+
+Two API regressions cover grant/update/revoke/disable without authentication mutation and service status/active-session refusal. Live native checks must additionally verify effective ID policy, persistence, password-authenticated direct connection and actual service state. A pending UAC prompt or non-elevated token cannot be reported as successful system-service installation.
