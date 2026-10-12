@@ -8,7 +8,7 @@ export const remoteMethods = {
   'remote.metrics': { description: 'Read native FPS, decode queue and shared-channel delay samples. Delay is not input-to-display latency.', params: {} },
   'remote.start': { description: 'Start the bundled remote engine.', params: {} },
   'remote.settings.get': { description: 'Read remote preferences and saved devices; passwords are redacted.', params: {} },
-  'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, server, relayServer, serverKey, approval, verification' } },
+  'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, server, relayServer, serverKey, approval, verification' } },
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
   'remote.connect': { description: 'Open a branded native remote window. Normal remote authentication applies.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
@@ -19,7 +19,8 @@ export const remoteMethods = {
 }
 const defaults = { fps: 60, quality: 70, codec: 'h264', gpu: true, hardwareCodec: true,
   acceptConnections: true, keyboard: true, clipboard: true, fileTransfer: true,
-  forceRelay: false, server: '', relayServer: '', serverKey: '', approval: 'password', verification: 'use-both-passwords' }
+  forceRelay: false, tcpPunch: true, udpPunch: true, webrtc: true,
+  server: '', relayServer: '', serverKey: '', approval: 'password', verification: 'use-both-passwords' }
 function fail(code, message) { throw Object.assign(new Error(message), { apiCode: code }) }
 export function validateRemoteSettings(patch) {
   if (!patch || typeof patch !== 'object' || Array.isArray(patch)) fail('INVALID_PARAMS', 'settings must be an object.')

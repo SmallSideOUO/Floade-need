@@ -1,10 +1,11 @@
 {
   "repository": "https://github.com/SmallSideOUO/Floade-RustDesk",
-  "commit": "7b3c478c3445938ee1230994d6ccfc08e7ee9e62",
+  "commit": "624cb53399a83e9fdcaf0b3bf4daccd8f6e20d24",
   "upstreamVersion": "1.5.0",
   "upstreamCommit": "fada664df7a294d1d1a9ca3e7cd3637069122f17",
   "flutterVersion": "3.24.5",
-  "flutterEngine": "a18df97ca57a249df5d8d68cd0820600223ce262",
+  "flutterEngine": "bc374ca81eae3f77329ebf7bc98efadfde10018e",
   "license": "AGPL-3.0-only",
-  "buildInstructions": "README-FLOADE.md"
+  "buildInstructions": "README-FLOADE.md",
+  "flutterEngineArtifactSha256": "ec8cabf36ee4ff24c8d98de25b00e70781eb03876265aee84d0fe554a110036e"
 }

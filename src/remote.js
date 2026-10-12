@@ -3,7 +3,7 @@ const $ = id => document.getElementById(id)
 const english = new URLSearchParams(location.search).get('lang') === 'en'
 const text = (zh, en) => english ? en : zh
 if (english) { document.documentElement.lang = 'en'; for (const el of document.querySelectorAll('[data-en]')) el.textContent = el.dataset.en }
-const toggles = { acceptConnections: ['允許遠端連線','Allow incoming connections'], keyboard: ['允許鍵盤與滑鼠','Allow keyboard and mouse'], clipboard: ['分享剪貼簿','Share clipboard'], fileTransfer: ['允許檔案傳輸','Allow file transfer'], gpu: ['GPU 解碼與顯示','GPU decoding and presentation'], hardwareCodec: ['硬體編解碼','Hardware encoding and decoding'], forceRelay: ['強制中繼連線','Force relay connection'] }
+const toggles = { acceptConnections: ['允許遠端連線','Allow incoming connections'], keyboard: ['允許鍵盤與滑鼠','Allow keyboard and mouse'], clipboard: ['分享剪貼簿','Share clipboard'], fileTransfer: ['允許檔案傳輸','Allow file transfer'], gpu: ['GPU 解碼與顯示','GPU decoding and presentation'], hardwareCodec: ['硬體編解碼','Hardware encoding and decoding'], forceRelay: ['強制中繼連線','Force relay connection'], tcpPunch: ['TCP 直連','TCP direct connection'], udpPunch: ['UDP 直連','UDP direct connection'], webrtc: ['WebRTC 直連','WebRTC direct connection'] }
 for (const [key, label] of Object.entries(toggles)) {
   const row = document.createElement('label'); row.className = 'toggle'
   const input = document.createElement('input'); input.type = 'checkbox'; input.id = key
