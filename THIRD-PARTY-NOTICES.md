@@ -10,4 +10,6 @@ Floade application source: https://github.com/SmallSideOUO/Floade-need
 
 Each release identifies the exact engine source revision in resources/remote/floade-build.json. Flutter, plugins and bundled native dependencies retain their respective licenses; the Flutter asset bundle includes its generated dependency notices. The pinned Flutter 3.24.5 engine source is https://github.com/flutter/engine/tree/a18df97ca57a249df5d8d68cd0820600223ce262.
 
+The checksummed runtime also includes THIRD-PARTY-NATIVE-NOTICES.txt with the pinned Flutter Windows engine notices, vcpkg copyright files and Rust dependency licenses.
+
 The application provides no warranty. You may copy, modify and redistribute the covered work under the AGPL terms. The remote settings window provides access to the license and source information.
