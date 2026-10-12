@@ -2,9 +2,9 @@
 (async () => {
   const $ = selector => document.querySelector(selector);
   const canvas = $('#canvas'), layer = $('#nodes'), lines = $('#lines'), panelLayer = $('#panels'), menu = $('#context-menu');
-  const {route, ports, style, removeEdge, removeNode} = window.mapConnections;
+  const {ports, style, removeEdge, removeNode, shapePath, boxOf, routes} = window.mapConnections;
   let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
-  let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0;
+  let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0, revision = 0, dirty = false, apiBusy = false;
   const panels = new Map(), revealed = new Set();
   const by = id => graph.nodes.find(node => node.id === id);
   const edgeBy = id => graph.edges.find(edge => edge.id === id);
@@ -13,13 +13,18 @@
   const at = point => ({x: view.x + point.x * view.z, y: view.y + point.y * view.z});
   const visual = node => !node ? 'object' : settings.visualMode === 'show' || revealed.has(node.id) ? 'full' : settings.visualMode === 'mask' ? (node.visualVisibility === 'object' ? 'object' : 'text') : node.visualVisibility || 'full';
   const label = node => !node ? '未指定' : visual(node) === 'full' ? node.title || '未命名' : '••••••';
-  const payload = () => ({graph, view, settings, panels: [...panels.values()].map(({kind, id, x, y}) => ({kind, id, x, y}))});
+  const payload = () => ({graph, view, settings, revision, panels: [...panels.values()].map(({kind, id, x, y}) => ({kind, id, x, y}))});
+  function commit() {
+    clearTimeout(saveTimer); if (!dirty) return;
+    const result = window.mapStore.saveNow(payload()); if (result.error) throw new Error(result.error);
+    revision = result.revision; dirty = false; $('#save-status').textContent = '已儲存 · AI 版本已更新';
+  }
 
   function save() {
-    clearTimeout(saveTimer);
+    clearTimeout(saveTimer); dirty = true;
     $('#save-status').textContent = '儲存中…';
-    saveTimer = setTimeout(async () => {
-      try { await window.mapStore.save(payload()); $('#save-status').textContent = '已儲存 · AI 版本已更新'; }
+    saveTimer = setTimeout(() => {
+      try { commit(); }
       catch (error) { $('#save-status').textContent = '儲存失敗：' + error.message; }
     }, 130);
   }
@@ -28,20 +33,13 @@
     for (const [key, value] of Object.entries(attrs)) element.setAttribute(key, value);
     return element;
   }
-  function shapePath(node) {
-    if (node.shape === 'circle' || node.shape === 'ellipse') return 'M 50 2 A 48 48 0 1 1 49.99 2 Z';
-    if (node.shape === 'diamond') return 'M 50 2 L 98 50 L 50 98 L 2 50 Z';
-    return node.shape === 'rectangle' ? 'M 2 2 H 98 V 98 H 2 Z' : 'M 10 2 H 90 Q 98 2 98 10 V 90 Q 98 98 90 98 H 10 Q 2 98 2 90 V 10 Q 2 2 10 2 Z';
-  }
   let routeKey = '', routeCache = new Map();
-  const boxOf = node => { const size = baseSize(node); return {id: node.id, x: node.x - size.w / 2, y: node.y, w: size.w, h: size.h}; };
   function linkTarget(event) { const node = document.elementFromPoint(event.clientX, event.clientY)?.closest('.node'); return node?.dataset.id || null; }
   function draw() {
     const bounds = canvas.getBoundingClientRect(), boxes = graph.nodes.filter(node => visual(node) !== 'object').map(boxOf);
-    const key = JSON.stringify([boxes, graph.edges.map(edge => [edge.id, edge.from, edge.to])]);
+    const key = JSON.stringify([boxes, graph.edges.map(({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}) => ({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}))]);
     if (key !== routeKey) {
-      routeKey = key; routeCache = new Map(); const lookup = new Map(boxes.map(box => [box.id, box]));
-      for (const edge of graph.edges) if (lookup.has(edge.from) && lookup.has(edge.to)) routeCache.set(edge.id, route(lookup.get(edge.from), lookup.get(edge.to), boxes));
+      routeKey = key; routeCache = routes({nodes: graph.nodes.filter(node => visual(node) !== 'object'), edges: graph.edges});
     }
     lines.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`); lines.replaceChildren(); layer.replaceChildren();
     const drawing = svg('g', {transform: `translate(${view.x} ${view.y}) scale(${view.z})`}); lines.append(drawing);
@@ -155,7 +153,8 @@
         const a = by(edge.from), b = by(edge.to), masked = visual(a) !== 'full' || visual(b) !== 'full';
         panel.element.querySelector('[data-heading]').textContent = label(a) + ' ↔ ' + label(b);
         setField(panel, 'edgeLabel', masked ? '[視覺遮蔽]' : edge.label || '', masked);
-        const appearance = style(edge); setField(panel, 'edgeColor', appearance.color); setField(panel, 'edgeWidth', appearance.width); setField(panel, 'edgeStyle', appearance.lineStyle); continue;
+        const appearance = style(edge); setField(panel, 'edgeColor', appearance.color); setField(panel, 'edgeWidth', appearance.width); setField(panel, 'edgeStyle', appearance.lineStyle);
+        setField(panel, 'edgeRouting', edge.routing || 'curve'); setField(panel, 'edgeCurvature', Math.round((edge.curvature ?? .38) * 100)); setField(panel, 'edgeOffset', edge.offset || 0); continue;
       }
       const masked = visual(node) !== 'full', size = baseSize(node);
       panel.element.querySelector('[data-heading]').textContent = label(node);
@@ -180,6 +179,10 @@
       if (name === 'edgeLabel') edge.label = field.value;
       if (name === 'edgeColor') edge.color = field.value;
       if (name === 'edgeStyle') edge.lineStyle = field.value === 'dashed' ? 'dashed' : 'solid';
+      if (['edgeRouting','edgeCurvature','edgeOffset'].includes(name)) { edge.controlPoints = null; edge.waypoints = null; }
+      if (name === 'edgeRouting') edge.routing = field.value;
+      if (name === 'edgeCurvature') edge.curvature = Number(field.value) / 100;
+      if (name === 'edgeOffset') edge.offset = Math.max(-1000, Math.min(1000, Number(field.value) || 0));
       if (name === 'edgeWidth') { const value = Number(field.value); if (!Number.isFinite(value)) return; edge.width = Math.max(.5, Math.min(12, value)); }
       draw(); save(); return;
     }
@@ -197,6 +200,7 @@
     if (action === 'reveal' && node) revealed.add(node.id);
     if (action === 'delete' && node) deleteNode(node.id);
     if (action === 'edge-delete') removeEdge(graph, panel.id);
+    if (action === 'edge-auto') { const edge = edgeBy(panel.id); if (edge) Object.assign(edge, {routing: 'curve', controlPoints: null, waypoints: null, fromPort: 'auto', toPort: 'auto', curvature: .38, offset: 0}); }
     draw(); save();
   }
   function select(id) {
@@ -220,6 +224,7 @@
   });
   menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'delete' && point?.nodeId) { deleteNode(point.nodeId); draw(); save(); } });
   canvas.addEventListener('pointerdown', event => {
+    if (apiBusy) return;
     if (event.target.closest('#context-menu,.zoom') || event.button !== 0 && event.button !== 1) return;
     dismissMenu();
     if (event.button === 0 && event.target.closest('.object-panel')) return;
@@ -264,18 +269,30 @@
   document.addEventListener('pointerdown', event => { if (!canvas.contains(event.target)) dismissMenu(); });
   document.addEventListener('click', event => { if (event.target.closest('.object-panel')) return; const action = event.target.closest('[data-action]')?.dataset.action; if (action === 'minus' || action === 'plus') { const bounds = canvas.getBoundingClientRect(); zoomAt(bounds.width / 2, bounds.height / 2, action === 'plus' ? 1.2 : 1 / 1.2); save(); } });
   window.addEventListener('keydown', event => {
+    if (apiBusy) return;
     if (event.key === 'Escape') { dismissMenu(); if (gesture?.type === 'link') gesture = null; selected = null; revealed.clear(); draw(); return; }
     if (event.target.closest('input,textarea,select') || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key.toLowerCase() === 'f') { overview(); save(); }
   });
-  window.addEventListener('beforeunload', () => { if (ready) { clearTimeout(saveTimer); window.mapStore.saveNow(payload()); } });
+  window.addEventListener('beforeunload', () => { if (ready) { try { commit(); } catch {} } });
+  window.mapStore.onFlush(lock => {
+    if (gesture) throw new Error('使用者正在拖曳，請稍後重試');
+    commit();
+    if (lock) { apiBusy = true; document.body.classList.add('api-busy'); }
+  });
+  window.mapStore.onState(state => {
+    graph = state.graph; revision = state.revision; settings = {...settings,...state.settings}; if (state.view) view = state.view;
+    dirty = false; clearTimeout(saveTimer); apiBusy = false; document.body.classList.remove('api-busy');
+    $('#ai-mode').value = settings.aiMode; $('#visual-mode').value = settings.visualMode;
+    if (!by(selected)) selected = null; draw(); $('#save-status').textContent = '已同步 · AI 修改已留紀錄';
+  });
   try {
-    const state = await window.mapStore.load(); graph = state.graph;
+    const state = await window.mapStore.load(); graph = state.graph; revision = state.revision;
     if (!Array.isArray(graph.nodes) || !Array.isArray(graph.edges)) throw new Error('地圖格式無效');
     for (const node of graph.nodes) if (!['circle', 'ellipse', 'diamond', 'rounded', 'rectangle'].includes(node.shape)) node.shape = 'ellipse';
     settings = {...settings, ...state.settings}; $('#ai-mode').value = settings.aiMode; $('#visual-mode').value = settings.visualMode;
     if (state.view && ['x', 'y', 'z'].every(key => Number.isFinite(state.view[key])) && state.view.z > 0) { view = state.view; draw(); } else overview();
     for (const panel of state.panels || []) if (['node', 'edge'].includes(panel.kind) && Number.isFinite(panel.x) && Number.isFinite(panel.y)) openPanel(panel.kind, panel.id, panel);
-    ready = true; $('#save-status').textContent = '本機加密儲存 · AI 版本已產生'; new ResizeObserver(() => draw()).observe(canvas);
+    ready = true; window.mapStore.ready(); $('#save-status').textContent = '本機加密儲存 · AI API 已開啟'; new ResizeObserver(() => draw()).observe(canvas);
   } catch (error) { $('#save-status').textContent = '載入失敗：' + error.message; canvas.style.pointerEvents = 'none'; }
 })();

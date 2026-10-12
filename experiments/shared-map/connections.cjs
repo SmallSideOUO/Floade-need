@@ -53,24 +53,24 @@
     if (a.x === b.x) return a.x > left && a.x < right && Math.max(a.y, b.y) > top && Math.min(a.y, b.y) < bottom;
     return a.y > top && a.y < bottom && Math.max(a.x, b.x) > left && Math.min(a.x, b.x) < right;
   }
-  function path(points) {
+  function path(points, cornerRadius = 16) {
     if (!points.length) return '';
     let result = `M ${points[0].x} ${points[0].y}`;
     for (let i = 1; i < points.length - 1; i++) {
-      const a = points[i - 1], b = points[i], c = points[i + 1], ab = Math.hypot(b.x - a.x, b.y - a.y), bc = Math.hypot(c.x - b.x, c.y - b.y), radius = Math.min(16, ab / 2, bc / 2);
+      const a = points[i - 1], b = points[i], c = points[i + 1], ab = Math.hypot(b.x - a.x, b.y - a.y), bc = Math.hypot(c.x - b.x, c.y - b.y), radius = Math.min(cornerRadius, ab / 2, bc / 2);
       if (!radius) continue;
       const before = {x: b.x + (a.x - b.x) * radius / ab, y: b.y + (a.y - b.y) * radius / ab}, after = {x: b.x + (c.x - b.x) * radius / bc, y: b.y + (c.y - b.y) * radius / bc};
       result += ` L ${before.x} ${before.y} Q ${b.x} ${b.y} ${after.x} ${after.y}`;
     }
     const last = points.at(-1); return result + ` L ${last.x} ${last.y}`;
   }
-  function route(a, b, obstacles = []) {
+  function orthogonalRoute(a, b, obstacles = [], edge = {}) {
     let best;
     const margin = Math.max(20, Math.max(a.w, a.h, b.w, b.h) * .02 + 12);
     const left = Math.min(a.x, b.x, ...obstacles.map(box => box.x)) - 24, right = Math.max(a.x + a.w, b.x + b.w, ...obstacles.map(box => box.x + box.w)) + 24;
     const top = Math.min(a.y, b.y, ...obstacles.map(box => box.y)) - 24, bottom = Math.max(a.y + a.h, b.y + b.h, ...obstacles.map(box => box.y + box.h)) + 24;
     const nearby = obstacles.filter(box => box.id !== a.id && box.id !== b.id && box.x <= Math.max(a.x + a.w, b.x + b.w) && box.x + box.w >= Math.min(a.x, b.x) && box.y <= Math.max(a.y + a.h, b.y + b.h) && box.y + box.h >= Math.min(a.y, b.y)).slice(0, 3);
-    for (const from of ports(a)) for (const to of ports(b)) {
+    for (const from of ports(a).filter(port=>!edge.fromPort||edge.fromPort==='auto'||port.side===edge.fromPort)) for (const to of ports(b).filter(port=>!edge.toPort||edge.toPort==='auto'||port.side===edge.toPort)) {
       const s = {x: from.x + from.dx * margin, y: from.y + from.dy * margin}, t = {x: to.x + to.dx * margin, y: to.y + to.dy * margin};
       const candidates = [[from, s, {x: t.x, y: s.y}, t, to], [from, s, {x: s.x, y: t.y}, t, to]];
       for (const x of [(s.x + t.x) / 2, left, right, ...nearby.flatMap(box => [box.x - 24, box.x + box.w + 24])]) candidates.push([from, s, {x, y: s.y}, {x, y: t.y}, t, to]);
@@ -90,5 +90,67 @@
     }
     return {...best, d: path(best.points)};
   }
-  return {materialize, removeEdge, removeNode, style, ports, path, route};
+  function cubic(p, c1, c2, q) {
+    const points = Array.from({length: 41}, (_, i) => {
+      const t = i / 40, u = 1 - t;
+      return {x: u*u*u*p.x + 3*u*u*t*c1.x + 3*u*t*t*c2.x + t*t*t*q.x, y: u*u*u*p.y + 3*u*u*t*c1.y + 3*u*t*t*c2.y + t*t*t*q.y};
+    });
+    return {points, d: `M ${p.x} ${p.y} C ${c1.x} ${c1.y} ${c2.x} ${c2.y} ${q.x} ${q.y}`};
+  }
+  function curveCost(points, a, b, obstacles, occupied) {
+    let collisions = 0, length = 0, overlap = 0;
+    for (let i = 1; i < points.length; i++) {
+      const p = points[i]; length += Math.hypot(p.x - points[i-1].x, p.y - points[i-1].y);
+      for (const box of obstacles) {
+        if (box.id === a.id && i < 5 || box.id === b.id && i > points.length - 6) continue;
+        if (p.x > box.x - 8 && p.x < box.x + box.w + 8 && p.y > box.y - 8 && p.y < box.y + box.h + 8) collisions++;
+      }
+      if (i > 7 && i < points.length - 8) for (const other of occupied) {
+        if (other.points?.some(q => Math.hypot(p.x-q.x,p.y-q.y) < 12)) overlap += 18;
+      }
+    }
+    return {collisions, score: collisions * 100000 + length + overlap};
+  }
+  function route(a, b, obstacles = [], edge = {}, occupied = []) {
+    if (edge.routing === 'rounded' && !edge.waypoints?.length && !edge.controlPoints) {
+      const result = orthogonalRoute(a, b, obstacles, edge); return {...result, d: path(result.points, edge.cornerRadius ?? 32)};
+    }
+    const fromPorts = ports(a).filter(port => !edge.fromPort || edge.fromPort === 'auto' || port.side === edge.fromPort);
+    const toPorts = ports(b).filter(port => !edge.toPort || edge.toPort === 'auto' || port.side === edge.toPort);
+    let best;
+    for (const from of fromPorts) for (const to of toPorts) {
+      let result;
+      if (edge.waypoints?.length) {
+        const points = [from, ...edge.waypoints, to];
+        result = {points, d: path(points, edge.cornerRadius ?? 40)};
+      } else {
+        const dx = to.x-from.x, dy = to.y-from.y, distance = Math.hypot(dx,dy);
+        const reach = Math.max(24, Math.min(320, distance * (edge.curvature ?? .38)));
+        const offset = edge.offset || 0, nx = -dy/Math.max(1,distance), ny = dx/Math.max(1,distance);
+        const controls = edge.controlPoints || [{x: from.x+from.dx*reach+nx*offset, y: from.y+from.dy*reach+ny*offset}, {x: to.x+to.dx*reach+nx*offset, y: to.y+to.dy*reach+ny*offset}];
+        result = cubic(from, controls[0], controls[1], to);
+      }
+      const cost = curveCost(result.points,a,b,obstacles,occupied);
+      if (!best || cost.score < best.score) best = {...result,...cost,fromPort:from.side,toPort:to.side};
+    }
+    if (best.collisions && !edge.controlPoints && !edge.waypoints?.length && (!edge.fromPort || edge.fromPort==='auto') && (!edge.toPort || edge.toPort==='auto')) {
+      const fallback = orthogonalRoute(a,b,obstacles);
+      if (!fallback.collisions) return {...fallback,d:path(fallback.points,edge.cornerRadius ?? 48)};
+    }
+    return best;
+  }
+  function boxOf(node) {
+    return {id:node.id,x:node.x-(node.width || (node.shape==='circle'?140:210))/2,y:node.y,w:node.width || (node.shape==='circle'?140:210),h:node.height || (node.shape==='circle'?140:node.shape==='diamond'?130:100)};
+  }
+  function shapePath(node) {
+    if (node.shape==='circle'||node.shape==='ellipse') return 'M 50 2 A 48 48 0 1 1 49.99 2 Z';
+    if (node.shape==='diamond') return 'M 50 2 L 98 50 L 50 98 L 2 50 Z';
+    return node.shape==='rectangle'?'M 2 2 H 98 V 98 H 2 Z':'M 10 2 H 90 Q 98 2 98 10 V 90 Q 98 98 90 98 H 10 Q 2 98 2 90 V 10 Q 2 2 10 2 Z';
+  }
+  function routes(graph) {
+    const boxes=graph.nodes.map(boxOf), lookup=new Map(boxes.map(box=>[box.id,box])), result=new Map();
+    for(const edge of graph.edges) if(lookup.has(edge.from)&&lookup.has(edge.to)) result.set(edge.id,route(lookup.get(edge.from),lookup.get(edge.to),boxes,edge,[...result.values()]));
+    return result;
+  }
+  return {materialize, removeEdge, removeNode, style, ports, path, route, boxOf, shapePath, routes};
 });

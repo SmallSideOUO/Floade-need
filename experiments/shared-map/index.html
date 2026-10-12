@@ -48,7 +48,7 @@
   </template>
   <template id="edge-panel-template">
     <div class="panel-heading"><strong data-heading></strong><button data-action="close" aria-label="關閉這個連線面板">×</button></div>
-    <div class="panel-body"><label>關係，可以不命名<input data-field="edgeLabel" maxlength="80"></label><div class="colors"><label>顏色<input data-field="edgeColor" type="color"></label><label>粗細<input data-field="edgeWidth" type="number" min="0.5" max="12" step="0.5"></label></div><label>線條<select data-field="edgeStyle"><option value="solid">實線</option><option value="dashed">虛線</option></select></label><button data-action="edge-delete">刪除連線</button></div>
+    <div class="panel-body"><label>關係，可以不命名<input data-field="edgeLabel" maxlength="80"></label><div class="colors"><label>顏色<input data-field="edgeColor" type="color"></label><label>粗細<input data-field="edgeWidth" type="number" min="0.5" max="12" step="0.5"></label></div><label>線條<select data-field="edgeStyle"><option value="solid">實線</option><option value="dashed">虛線</option></select></label><label>路徑<select data-field="edgeRouting"><option value="curve">平滑曲線</option><option value="rounded">圓角折線</option></select></label><label>彎曲程度<input data-field="edgeCurvature" type="range" min="0" max="100"></label><label>偏移<input data-field="edgeOffset" type="number" min="-1000" max="1000"></label><div class="panel-actions"><button data-action="edge-auto">回到自動連線</button><button data-action="edge-delete">刪除連線</button></div></div>
   </template>
   <script src="connections.cjs"></script><script src="renderer.js"></script>
 </body>

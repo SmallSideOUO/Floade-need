@@ -20,10 +20,18 @@ test('routing uses facing boundary points for direct horizontal and vertical con
 
 test('routing avoids an intervening object and rounds bends', () => {
   const a={id:'a',x:0,y:100,w:200,h:100},b={id:'b',x:650,y:100,w:200,h:100},block={id:'block',x:300,y:0,w:220,h:300};
-  const result=route(a,b,[a,b,block]);assert.equal(result.collisions,0);assert.ok(result.d.includes(' Q '));
+  const result=route(a,b,[a,b,block]);assert.equal(result.collisions,0);assert.match(result.d,/ [QC] /);
   assert.ok(result.points.every(point=>Number.isFinite(point.x)&&Number.isFinite(point.y)));
   assert.ok(ports(a).some(point=>point.x===result.points[0].x&&point.y===result.points[0].y));
   assert.ok(ports(b).some(point=>point.x===result.points.at(-1).x&&point.y===result.points.at(-1).y));
+});
+
+test('curves support explicit AI control points, ports and a manual rounded route', () => {
+  const a={id:'a',x:0,y:0,w:200,h:100},b={id:'b',x:500,y:250,w:200,h:100};
+  const controls=[{x:280,y:-80},{x:370,y:450}];
+  const curve=route(a,b,[a,b],{fromPort:'right',toPort:'left',controlPoints:controls});
+  assert.equal(curve.fromPort,'right');assert.equal(curve.toPort,'left');assert.ok(curve.d.includes('C 280 -80 370 450'));
+  const rounded=route(a,b,[a,b],{routing:'rounded',cornerRadius:40});assert.ok(rounded.d.includes(' Q '));
 });
 
 test('edge styles default to solid and remain in privacy-filtered output without hidden text', () => {

@@ -10,7 +10,7 @@ function aiMap(state){
   if(masked.has(n.id)){out.title='[已遮蔽]';out.textWithheld=true;}else{out.title=n.title||'';out.note=n.note||'';if(n.mark)out.mark=n.mark;}
   return out;
  });
- const edges=g.edges.filter(e=>kept.has(e.from)&&kept.has(e.to)).map(e=>{const out={id:e.id,from:e.from,to:e.to,label:masked.has(e.from)||masked.has(e.to)?'':e.label||''};for(const key of ['color','width','lineStyle'])if(e[key]!==undefined)out[key]=e[key];return out;});
+ const edges=g.edges.filter(e=>kept.has(e.from)&&kept.has(e.to)).map(e=>{const out={id:e.id,from:e.from,to:e.to,label:masked.has(e.from)||masked.has(e.to)?'':e.label||''};for(const key of ['color','width','lineStyle','routing','fromPort','toPort','curvature','offset','cornerRadius','controlPoints','waypoints'])if(e[key]!==undefined)out[key]=e[key];return out;});
  return {version:1,access:open?'全部開放':'依物件隱私設定',graph:{version:1,current:kept.has(g.current)?g.current:null,nodes,edges}};
 }
 module.exports={aiMap};
