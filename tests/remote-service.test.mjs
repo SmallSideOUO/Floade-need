@@ -40,6 +40,26 @@ test('remembered credentials are protected, redacted, reused and forgotten', asy
   await service.dispatch('remote.devices.forget', { deviceId: '123456789' })
   assert.deepEqual((await service.dispatch('remote.settings.get')).devices, [])
 })
+
+test('mobile P2P transport preferences persist and override a remembered peer relay preference', async t => {
+  const { directory, calls, service } = fixture(t)
+  await service.dispatch('remote.connect', { deviceId: '123456789', password: 'fixture-secret', remember: true })
+  await service.dispatch('remote.settings.update', { settings: { forceRelay: true } })
+  await service.dispatch('remote.settings.update', { settings: { forceRelay: false, tcpPunch: false, udpPunch: true, webrtc: true } })
+  const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    safeStorage: { isEncryptionAvailable: () => true, decryptString: () => 'fixture-secret' },
+    engineCall: async (method, params) => { calls.push({ method, params }); return {} } })
+  await restarted.dispatch('remote.connect', { deviceId: '123456789' })
+  const settings = calls.at(-1).params.settings
+  assert.equal(calls.at(-1).params.password, 'fixture-secret')
+  assert.equal(settings.forceRelay, false)
+  assert.equal(settings.tcpPunch, false)
+  assert.equal(settings.udpPunch, true)
+  assert.equal(settings.webrtc, true)
+  assert.equal(settings.fps, 60)
+  assert.equal(settings.gpu, true)
+  assert.equal(settings.hardwareCodec, true)
+})
 test('invalid connection data and unavailable protected storage never launch a session', async t => {
   const { directory, calls, service } = fixture(t)
   await assert.rejects(service.dispatch('remote.connect', { deviceId: '../123456' }), { apiCode: 'INVALID_PARAMS' })

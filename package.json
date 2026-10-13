@@ -1,6 +1,6 @@
 {
   "name": "floade-local-data",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "private": true,
   "type": "module",
   "description": "Floade floating workspace, Work Map and remote desktop.",

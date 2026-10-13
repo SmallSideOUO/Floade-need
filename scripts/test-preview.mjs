@@ -7,6 +7,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { requestLocalApi } from '../src/local-api-client.mjs'
 import { createFloatingLauncher } from '../src/floating-launcher.mjs'
+import { createRemoteService } from '../src/remote-service.mjs'
 
 const root = process.env.FLOADE_QA_APP_PATH || path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'floade-preview-qa-'))
@@ -19,6 +20,15 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const loginWrites = []
 const workMapRequests = []
+let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
+globalThis.previewRemoteFactory = options => {
+  const service = createRemoteService({ ...options,
+    engineCall: async method => method === 'status' ? { deviceId: '123456789', windows: [1], connection: { status_num: 1 } }
+      : method === 'accessGet' ? { enabled: false, devices: [] } : {},
+    windowsService: { status: async () => ({ ready: false, installed: false }) } })
+  return { ...service, dispatch: (method, params) => method === 'remote.metrics'
+    ? Promise.resolve({ samples: [remoteSample] }) : service.dispatch(method, params) }
+}
 globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
 const originalFetch = globalThis.fetch
@@ -70,6 +80,8 @@ source = source.replace(/from '(\.\/[^']+)'/g, (_match, relative) =>
   `from '${pathToFileURL(path.join(root, 'src', relative)).href}'`)
 assert.ok(source.includes('  app.whenReady().then(() => {'))
 source = source.replace('floade-local-data-control', `floade-preview-qa-${process.pid}`)
+assert.ok(source.includes('remoteService = createRemoteService({'))
+source = source.replace('remoteService = createRemoteService({', 'remoteService = globalThis.previewRemoteFactory({')
 source = source.replace('    loadFolders()', '    folders = [{ path: globalThis.previewApiFolder, repo: null }]')
 const realApiCommand = 'command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 })'
 assert.ok(source.includes(realApiCommand))
@@ -145,6 +157,31 @@ try {
   assert.equal(await runPanel('Boolean(document.querySelector("#communication"))'), false)
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
   results.push('AI communication UI and APIs remain removed; five quick actions including Remote load normally')
+  await apiCall('remote.settings.update', { settings: { forceRelay: true } })
+  await runPanel('document.querySelector("#remote").click()')
+  await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('remote.html'))))
+  const remoteWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('remote.html'))
+  const runRemote = code => remoteWindow.webContents.executeJavaScript(code)
+  await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("強制中繼")'))
+  await runRemote('document.querySelector("#mobile-p2p").click()')
+  await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("手機網路 P2P")'))
+  assert.deepEqual(await runRemote('["forceRelay","tcpPunch","udpPunch","webrtc"].map(id => document.getElementById(id).checked)'), [false, false, true, true])
+  const mobileSettings = (await apiCall('remote.settings.get')).result.settings
+  assert.equal(mobileSettings.fps, 60)
+  assert.equal(mobileSettings.gpu, true)
+  await until(() => runRemote('document.querySelector("#connection-route").textContent === "P2P · 57 FPS"'))
+  const remoteScreenshot = await remoteWindow.webContents.capturePage()
+  await fs.mkdir(path.join(root, 'release-output'), { recursive: true })
+  await fs.writeFile(path.join(root, 'release-output', 'remote-mobile-p2p.png'), remoteScreenshot.toPNG())
+  remoteSample = { ...remoteSample, direct: false, presented_fps: { 1: 22 } }
+  await until(() => runRemote('document.querySelector("#connection-route").textContent === "中繼 · 22 FPS"'))
+  remoteSample = { ...remoteSample, fresh: false }
+  await until(() => runRemote('document.querySelector("#connection-route").textContent.includes("等待畫面資料")'))
+  await runRemote('document.querySelector("#automatic-direct").click()')
+  await until(async () => (await apiCall('remote.settings.get')).result.settings.tcpPunch === true)
+  assert.equal((await apiCall('remote.settings.get')).result.settings.forceRelay, false)
+  remoteWindow.close()
+  results.push('mobile P2P preset persists UDP/WebRTC without TCP or forced relay; actual route/FPS rejects stale samples and automatic direct restores TCP')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)
   assert.equal(launcher.ball.__qaSkipTaskbar, true)
   assert.equal(launcher.panel.__qaSkipTaskbar, true)

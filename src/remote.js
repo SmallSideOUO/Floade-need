@@ -21,6 +21,10 @@ $('legal').addEventListener('click', () => api.legal())
 async function refreshSettings() {
   const result = await request('remote.settings.get')
   for (const [key, value] of Object.entries(result.settings)) { const el = $(key); if (el) { if (el.type === 'checkbox') el.checked = value; else el.value = value } }
+  const s = result.settings
+  $('network-profile').textContent = s.forceRelay ? text('目前設定：強制中繼','Current preference: force relay')
+    : !s.tcpPunch && s.udpPunch && s.webrtc ? text('目前設定：手機網路 P2P（UDP／WebRTC）','Current preference: mobile network P2P (UDP / WebRTC)')
+    : text('目前設定：自訂／自動直連','Current preference: custom / automatic direct connection')
   $('devices').replaceChildren()
   if (!result.devices.length) $('devices').textContent = text('尚未連線至任何裝置。','No recent devices.')
   for (const device of result.devices) {
@@ -36,7 +40,21 @@ async function refreshStatus() {
   const result = await request('remote.status')
   $('device-id').textContent = result.deviceId || '—'
   $('engine-status').textContent = result.running ? (result.connection?.status_num > 0 ? text('可接受連線','Ready for connections') : text('引擎已啟動，正在連線至 ID 伺服器','Engine running; contacting ID server')) : text('遠端引擎尚未啟動','Remote engine stopped')
+  if (!result.windows?.length) { $('connection-route').textContent = text('尚無作用中的對外連線。','No active outgoing connection.'); return }
+  const metrics = await request('remote.metrics')
+  const samples = (metrics.samples || []).filter(sample => sample.fresh).sort((a, b) => b.sample_unix_ms - a.sample_unix_ms)
+  $('connection-route').textContent = samples.length ? samples.map(sample => {
+    const fps = Object.values(sample.presented_fps || {}).filter(Number.isFinite)
+    return (sample.direct === true ? 'P2P' : text('中繼','Relay')) + (fps.length ? ` · ${fps.join(' / ')} FPS` : '')
+  }).join(' · ') : text('連線中，等待畫面資料…','Connecting; waiting for video data…')
 }
+async function setNetworkProfile(tcpPunch) {
+  await request('remote.settings.update', { settings: { forceRelay: false, tcpPunch, udpPunch: true, webrtc: true } })
+  await refreshSettings()
+  message(text('連線路徑已儲存，請重新連線以套用。','Connection preference saved; reconnect to apply.'))
+}
+$('mobile-p2p').addEventListener('click', () => void action(() => setNetworkProfile(false)))
+$('automatic-direct').addEventListener('click', () => void action(() => setNetworkProfile(true)))
 async function refreshAccess() {
   const policy = await request('remote.access.get')
   $('access-status').textContent = policy.enabled
@@ -77,7 +95,7 @@ $('settings-form').addEventListener('submit', event => { event.preventDefault();
   const settings = {}; for (const key of Object.keys(toggles)) settings[key] = $(key).checked
   for (const key of ['fps','quality']) settings[key] = Number($(key).value)
   for (const key of ['codec','server','relayServer','serverKey','approval','verification']) settings[key] = $(key).value.trim()
-  await request('remote.settings.update', { settings }); message(text('設定已儲存；畫面設定套用至新連線。','Saved; display preferences apply to new connections.'))
+  await request('remote.settings.update', { settings }); await refreshSettings(); message(text('設定已儲存；畫面設定套用至新連線。','Saved; display preferences apply to new connections.'))
 }) })
 $('password-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => { await request('remote.password.set', { password: $('host-password').value }); $('host-password').value = ''; message(text('固定密碼已更新。','Permanent password updated.')) }) })
 $('advanced').addEventListener('click', () => void action(() => request('remote.advanced.open')))

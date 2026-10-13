@@ -21,6 +21,12 @@ For passwords, construct ParamsJson in memory from a secure prompt; do not put s
 
 GPU/display preferences apply to new sessions, including previously visited peers. Direct connectivity remains dependent on NAT/firewall/server conditions and falls back to relay. Requested FPS is a preference, not a guaranteed delivered rate.
 
+## Mobile hotspot P2P (0.1.26)
+
+Choose **Mobile network P2P** in the connection page, then reconnect. This saves `forceRelay=false`, `tcpPunch=false`, `udpPunch=true`, and `webrtc=true`, preserving picture, GPU and authentication preferences. It avoids the TCP punch route that connected successfully but repeatedly reset with Windows error 10054 on the tested mobile hotspot. **Automatic direct connection** re-enables TCP punching as well as UDP/WebRTC. Neither button starts a connection or changes an established session.
+
+The connection page displays the actual sampled P2P/relay route and per-display FPS while an outgoing window is active. A selected preference alone is not proof of a direct connection. The native engine retains relay fallback if direct routes cannot connect; the observed mobile hotspot session used direct WebRTC without relay. Public-server availability and other carrier NAT/firewall policies can differ.
+
 ## Native engine and installation
 
 Runtime files live in resources/remote. The frontend and helper server can continue receiving connections after the Floade panel closes. The default runtime operates within the signed-in user's desktop. Windows login-screen/UAC access requires installing the engine's native system service from Advanced tools, with Windows administrator privileges; this is separate from installing the per-user Floade app. An existing RustDesk service is preserved.
