@@ -1,6 +1,6 @@
 # Floade
 
-Version 0.1.22 adds Floade Remote: device codes, password authentication, protected remembered credentials, manual/API preferences and branded native remote windows. The floating dot places Remote below Add folder. See [remote setup and API](docs/remote.md) and [source/license notices](THIRD-PARTY-NOTICES.md). This integrated distribution is AGPL-3.0; previous MIT notices remain in LICENSE-MIT.
+Version 0.1.27 adds favorite remote devices: save a home computer with a Windows-protected password once, then connect or transfer files with one click. Favorites support names and credential updates and persist independently of recent connections. Full access and Windows administrator/login-screen support require one-time setup on the receiving computer. The floating dot places Remote below Add folder. See [remote setup and API](docs/remote.md) and [source/license notices](THIRD-PARTY-NOTICES.md). This integrated distribution is AGPL-3.0; previous MIT notices remain in LICENSE-MIT.
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
 

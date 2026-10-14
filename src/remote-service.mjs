@@ -18,9 +18,10 @@ export const remoteMethods = {
   'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, server, relayServer, serverKey, approval, verification' } },
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
-  'remote.connect': { description: 'Open a branded native remote window. Normal remote authentication applies.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
+  'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
   'remote.disconnect': { description: 'Close one native session window.', params: { windowId: 'integer from remote.status' } },
   'remote.devices.forget': { description: 'Remove a saved device and its protected credential.', params: { deviceId: 'numeric device code' } },
+  'remote.devices.save': { description: 'Add/update a favorite without connecting. Credentials use Windows protected storage and are never returned.', params: { deviceId: 'numeric device code', alias: 'optional name', password: 'optional write-only permanent password; omitted or empty preserves saved password', remember: 'optional boolean; false removes saved password', favorite: 'optional boolean; defaults to true' } },
   'remote.advanced.open': { description: 'Open advanced native settings and tools.', params: {} },
   'remote.shutdown': { description: 'Close native session windows and stop the managed UI engine for installation.', params: {} }
 }
@@ -65,7 +66,30 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     fs.renameSync(`${file}.tmp`, file)
     state = next
   }
-  const publicState = () => ({ settings: { ...state.settings }, devices: state.devices.map(({ deviceId, alias, lastUsed, credential }) => ({ deviceId, alias, lastUsed, hasPassword: Boolean(credential) })) })
+  // Upgrade previously remembered devices into favorites without changing their credentials.
+  const isFavorite = device => device.favorite ?? Boolean(device.credential)
+  const publicState = () => ({ settings: { ...state.settings }, devices: state.devices.map(device => ({ deviceId: device.deviceId, alias: device.alias, lastUsed: device.lastUsed, favorite: isFavorite(device), hasPassword: Boolean(device.credential) })) })
+  function validateDevice(p) {
+    const id = deviceCode(p.deviceId)
+    if (p.password !== undefined && (typeof p.password !== 'string' || p.password.length > 256)) fail('INVALID_PARAMS', 'Invalid password.')
+    for (const key of ['remember', 'favorite']) if (p[key] !== undefined && typeof p[key] !== 'boolean') fail('INVALID_PARAMS', `${key} must be boolean.`)
+    if (p.alias !== undefined && (typeof p.alias !== 'string' || p.alias.length > 80)) fail('INVALID_PARAMS', 'alias must be at most 80 characters.')
+    return id
+  }
+  function protectedCredential(p, previous) {
+    if (p.remember === false) return undefined
+    if (p.password && p.remember) {
+      if (!safeStorage?.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Cannot remember a password without protected storage.')
+      return safeStorage.encryptString(p.password).toString('base64')
+    }
+    return previous?.credential
+  }
+  function withDevice(device) {
+    const others = state.devices.filter(d => d.deviceId !== device.deviceId)
+    if (isFavorite(device) && others.filter(isFavorite).length >= 50) fail('INVALID_PARAMS', 'At most 50 favorite devices may be saved.')
+    const all = [device, ...others]
+    return [...all.filter(isFavorite), ...all.filter(d => !isFavorite(d)).slice(0, 50)]
+  }
   async function call(method, params = {}) {
     if (engineCall) return engineCall(method, params)
     let endpoint
@@ -174,32 +198,36 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     }
     if (method === 'remote.devices.forget') {
       const id = deviceCode(p.deviceId)
-      await start()
-      await call('forget', { deviceId: id })
+      // Local removal works even when the engine is offline.
+      try { await call('forget', { deviceId: id }) } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
       save({ ...state, devices: state.devices.filter(d => d.deviceId !== id) })
       return { forgotten: true }
     }
+    if (method === 'remote.devices.save') {
+      const id = validateDevice(p)
+      const previous = state.devices.find(d => d.deviceId === id)
+      const credential = protectedCredential({ ...p, remember: p.remember ?? true }, previous)
+      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
+        ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(credential ? { credential } : {}) }
+      save({ ...state, devices: withDevice(device) })
+      return publicState()
+    }
     if (method === 'remote.connect') {
-      const id = deviceCode(p.deviceId)
-      if (p.password !== undefined && (typeof p.password !== 'string' || p.password.length > 256)) fail('INVALID_PARAMS', 'Invalid password.')
-      if (p.remember !== undefined && typeof p.remember !== 'boolean') fail('INVALID_PARAMS', 'remember must be boolean.')
-      if (p.alias !== undefined && (typeof p.alias !== 'string' || p.alias.length > 80)) fail('INVALID_PARAMS', 'alias must be at most 80 characters.')
+      const id = validateDevice(p)
       if (p.mode !== undefined && !['desktop', 'files'].includes(p.mode)) fail('INVALID_PARAMS', 'mode must be desktop or files.')
       const previous = state.devices.find(d => d.deviceId === id)
       let password = p.password
       if (!password && previous?.credential) {
-        if (!safeStorage.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Windows protected storage is unavailable.')
-        password = safeStorage.decryptString(Buffer.from(previous.credential, 'base64'))
+        if (!safeStorage?.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Windows protected storage is unavailable.')
+        try { password = safeStorage.decryptString(Buffer.from(previous.credential, 'base64')) }
+        catch { fail('CREDENTIAL_UNAVAILABLE', 'Saved password cannot be read on this Windows account; update the device password.') }
       }
-      let credential = p.remember === false ? undefined : previous?.credential
-      if (p.remember && password) {
-        if (!safeStorage.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Cannot remember a password without protected storage.')
-        credential = safeStorage.encryptString(password).toString('base64')
-      }
+      const credential = protectedCredential({ ...p, password }, previous)
+      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(credential ? { credential } : {}) }
+      withDevice(device) // Validate the favorite limit before opening a session.
       await start()
       const result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings })
-      const device = { deviceId: id, alias: p.alias || previous?.alias || '', lastUsed: new Date().toISOString(), ...(credential ? { credential } : {}) }
-      save({ ...state, devices: [device, ...state.devices.filter(d => d.deviceId !== id)].slice(0, 50) })
+      save({ ...state, devices: withDevice(device) })
       return { ...result, deviceId: id, remembered: Boolean(credential) }
     }
     if (method === 'remote.password.set') {

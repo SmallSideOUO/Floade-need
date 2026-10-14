@@ -8,6 +8,16 @@ The device code is generated separately on each device. Never copy FloadeRemote.
 
 Call api.describe for the authoritative list. remote.settings.get redacts remembered credentials. remote.password.temporary is the explicit operation that reveals the temporary password. Authentication, password checks and local approval remain enforced by RustDesk.
 
+## Favorite devices (0.1.27)
+
+The connection page puts **Favorite devices** first. Choose **Add device**, enter a code, name and the receiving computer's permanent password, then **Save device**. Saving works without launching the engine or connecting; it does not verify the password. Desktop and file buttons reuse the Windows-protected credential. Edit can rename a device or replace its password; blank keeps the existing password, and unchecking Remember removes the Floade credential. Remove deletes the saved device and asks the running native engine to forget its cached password. Stored credentials belong to this Windows user and cannot be moved to another computer/account.
+
+Previously remembered devices become favorites automatically. Up to 50 favorites persist independently of the last 50 non-favorite connections, including across app restarts. Favorites may also be saved without passwords; authentication then appears in the native window. Temporary passwords may expire, so permanent passwords are needed for unattended access. Changing the receiving computer's password requires editing the saved password here.
+
+`remote.devices.save` takes `deviceId`, optional `alias`, write-only `password`, `remember` (default true) and `favorite` (default true). An omitted or empty password preserves the credential; `remember=false` removes it. It never changes incoming permissions. `remote.settings.get` returns `favorite` and `hasPassword` without returning encrypted or plaintext credentials. `remote.connect` uses an existing credential when no password is supplied.
+
+For full unattended access, configure the **receiving/home computer** once: set a permanent password, grant the controlling device code under **Full-access devices**, and install the Windows system service for administrator applications and the login screen. Then save the home computer on the controlling device. The connection page links to setup for **this computer**; saving a favorite cannot elevate a different computer or bypass its permissions. Windows UAC consent is required once for service installation. The native engine and password authentication are unchanged.
+
 Examples (PowerShell helper installed beside Floade.exe):
 
 ```powershell

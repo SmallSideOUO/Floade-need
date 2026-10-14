@@ -2,6 +2,8 @@ const api = window.floadeRemote
 const $ = id => document.getElementById(id)
 const english = new URLSearchParams(location.search).get('lang') === 'en'
 const text = (zh, en) => english ? en : zh
+let savedDevices = []
+let connecting = false
 if (english) { document.documentElement.lang = 'en'; for (const el of document.querySelectorAll('[data-en]')) el.textContent = el.dataset.en }
 const toggles = { acceptConnections: ['允許遠端連線','Allow incoming connections'], keyboard: ['允許鍵盤與滑鼠','Allow keyboard and mouse'], clipboard: ['分享剪貼簿','Share clipboard'], fileTransfer: ['允許檔案傳輸','Allow file transfer'], gpu: ['GPU 解碼與顯示','GPU decoding and presentation'], hardwareCodec: ['硬體編解碼','Hardware encoding and decoding'], forceRelay: ['強制中繼連線','Force relay connection'], tcpPunch: ['TCP 直連','TCP direct connection'], udpPunch: ['UDP 直連','UDP direct connection'], webrtc: ['WebRTC 直連','WebRTC direct connection'] }
 for (const [key, label] of Object.entries(toggles)) {
@@ -25,16 +27,43 @@ async function refreshSettings() {
   $('network-profile').textContent = s.forceRelay ? text('目前設定：強制中繼','Current preference: force relay')
     : !s.tcpPunch && s.udpPunch && s.webrtc ? text('目前設定：手機網路 P2P（UDP／WebRTC）','Current preference: mobile network P2P (UDP / WebRTC)')
     : text('目前設定：自訂／自動直連','Current preference: custom / automatic direct connection')
-  $('devices').replaceChildren()
-  if (!result.devices.length) $('devices').textContent = text('尚未連線至任何裝置。','No recent devices.')
-  for (const device of result.devices) {
-    const row = document.createElement('div'); row.className = 'device'
-    const name = document.createElement('div'); name.className = 'name'; name.textContent = device.alias || device.deviceId
-    const detail = document.createElement('small'); detail.textContent = device.deviceId + (device.hasPassword ? text(' · 已記住密碼',' · Password saved') : ''); name.append(detail)
-    const connect = document.createElement('button'); connect.textContent = text('連線','Connect'); connect.addEventListener('click', () => { $('peer-id').value = device.deviceId; $('peer-alias').value = device.alias; $('peer-password').value = ''; $('remember').checked = device.hasPassword; void action(() => connectPeer()) })
-    const forget = document.createElement('button'); forget.textContent = text('移除','Forget'); forget.addEventListener('click', () => void action(async () => { await request('remote.devices.forget', { deviceId: device.deviceId }); await refreshSettings() }))
-    row.append(name, connect, forget); $('devices').append(row)
+  savedDevices = result.devices
+  for (const [container, favorites] of [[$('favorites'), true], [$('devices'), false]]) {
+    container.replaceChildren()
+    const devices = result.devices.filter(device => device.favorite === favorites)
+    if (!devices.length) container.textContent = favorites ? text('加入家裡電腦，之後從這裡一鍵連線。','Add your home computer for one-click access.') : text('尚無其他最近裝置。','No other recent devices.')
+    for (const device of devices) {
+      const row = document.createElement('div'); row.className = 'device'
+      row.dataset.deviceId = device.deviceId
+      const name = document.createElement('div'); name.className = 'name'; name.textContent = device.alias || device.deviceId
+      const detail = document.createElement('small'); detail.textContent = device.deviceId + (device.hasPassword ? text(' · 已記住密碼',' · Password saved') : ''); name.append(detail)
+      if (!device.hasPassword) detail.textContent += text(' · 連線時需密碼',' · Password needed on connection')
+      const connect = document.createElement('button'); connect.textContent = text('連線','Connect'); connect.dataset.action = 'connect'; connect.addEventListener('click', () => void action(() => connectSaved(device)))
+      const files = document.createElement('button'); files.textContent = text('檔案','Files'); files.dataset.action = 'files'; files.addEventListener('click', () => void action(() => connectSaved(device, 'files')))
+      const edit = document.createElement('button'); edit.textContent = favorites ? text('編輯','Edit') : text('加入常用','Add favorite'); edit.dataset.action = 'edit'; edit.addEventListener('click', () => editDevice(device))
+      const forget = document.createElement('button'); forget.textContent = text('移除','Forget'); forget.addEventListener('click', () => void action(async () => { await request('remote.devices.forget', { deviceId: device.deviceId }); await refreshSettings() }))
+      row.append(name, connect, files, edit, forget); container.append(row)
+    }
   }
+}
+function editDevice(device) {
+  $('peer-id').value = device?.deviceId || ''; $('peer-alias').value = device?.alias || ''; $('peer-password').value = ''
+  $('remember').checked = true
+  $('device-form-title').textContent = device ? text('編輯常用裝置','Edit favorite device') : text('連線／新增裝置','Connect / add a device')
+  $('peer-password').placeholder = device?.hasPassword ? text('留白保留已儲存密碼','Leave blank to keep saved password') : ''
+  $('device-form-card').scrollIntoView({ block: 'center', behavior: 'smooth' }); $('peer-id').focus()
+}
+$('add-device').addEventListener('click', () => editDevice())
+$('host-setup').addEventListener('click', () => { view('settings'); $('access-form').scrollIntoView({ block: 'center', behavior: 'smooth' }) })
+$('save-device').addEventListener('click', () => void action(async () => {
+  if (!$('connect-form').reportValidity()) return
+  await request('remote.devices.save', { deviceId: $('peer-id').value.replace(/\s/g, ''), alias: $('peer-alias').value,
+    password: $('peer-password').value || undefined, remember: $('remember').checked, favorite: true })
+  $('peer-password').value = ''; await refreshSettings()
+  message(text('已儲存常用裝置。連線時會使用已記住的密碼；權限由對方電腦決定。','Favorite saved. Connections use the saved password; permissions are set by the receiving computer.'))
+}))
+async function connectSaved(device, mode = 'desktop') {
+  return connectPeer(mode, { deviceId: device.deviceId })
 }
 async function refreshStatus() {
   const result = await request('remote.status')
@@ -80,12 +109,16 @@ $('access-form').addEventListener('submit', event => { event.preventDefault(); v
 $('access-disable').addEventListener('click', () => void action(async () => { await request('remote.access.disable'); await refreshAccess() }))
 $('service-refresh').addEventListener('click', () => void action(refreshService))
 $('service-install').addEventListener('click', () => void action(async () => { await request('remote.service.install'); message(text('請同意 Windows UAC 提示，再檢查服務狀態。','Approve the Windows UAC request, then check service status.')); await refreshService() }))
-async function connectPeer(mode = 'desktop') {
-  const button = $('connect-form').querySelector('[type=submit]'); button.disabled = true
+async function connectPeer(mode = 'desktop', saved) {
+  if (connecting) return
+  connecting = true
+  const buttons = document.querySelectorAll('#connect-form button, [data-action="connect"], [data-action="files"]')
+  for (const button of buttons) button.disabled = true
   try {
-    const result = await request('remote.connect', { deviceId: $('peer-id').value.replace(/\s/g, ''), password: $('peer-password').value || undefined, remember: $('remember').checked, alias: $('peer-alias').value, mode })
+    const id = $('peer-id').value.replace(/\s/g, '')
+    const result = await request('remote.connect', { ...(saved || { deviceId: id, password: $('peer-password').value || undefined, remember: $('remember').checked, favorite: $('remember').checked || savedDevices.find(d => d.deviceId === id)?.favorite || false, alias: $('peer-alias').value }), mode })
     $('peer-password').value = ''; message(text('正在連線，請在遠端視窗查看登入結果。','Connecting; authentication appears in the remote window.')); await refreshSettings(); return result
-  } finally { button.disabled = false }
+  } finally { connecting = false; for (const button of buttons) button.disabled = false }
 }
 $('connect-form').addEventListener('submit', event => { event.preventDefault(); void action(() => connectPeer()) })
 $('files').addEventListener('click', () => void action(() => connectPeer('files')))

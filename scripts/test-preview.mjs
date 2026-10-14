@@ -21,10 +21,11 @@ const results = []
 const loginWrites = []
 const workMapRequests = []
 let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
+const remoteCalls = []
 globalThis.previewRemoteFactory = options => {
   const service = createRemoteService({ ...options,
-    engineCall: async method => method === 'status' ? { deviceId: '123456789', windows: [1], connection: { status_num: 1 } }
-      : method === 'accessGet' ? { enabled: false, devices: [] } : {},
+    engineCall: async (method, params) => { remoteCalls.push({ method, params }); return method === 'status' ? { deviceId: '123456789', windows: [1], connection: { status_num: 1 } }
+      : method === 'accessGet' ? { enabled: false, devices: [] } : {} },
     windowsService: { status: async () => ({ ready: false, installed: false }) } })
   return { ...service, dispatch: (method, params) => method === 'remote.metrics'
     ? Promise.resolve({ samples: [remoteSample] }) : service.dispatch(method, params) }
@@ -180,6 +181,31 @@ try {
   await runRemote('document.querySelector("#automatic-direct").click()')
   await until(async () => (await apiCall('remote.settings.get')).result.settings.tcpPunch === true)
   assert.equal((await apiCall('remote.settings.get')).result.settings.forceRelay, false)
+  await runRemote(`document.querySelector('#add-device').click(); document.querySelector('#peer-id').value = '987654321'; document.querySelector('#peer-alias').value = '家裡電腦'; document.querySelector('#peer-password').value = 'favorite-qa-secret'; document.querySelector('#save-device').click()`)
+  await until(() => runRemote(`document.querySelector('#favorites').textContent.includes('家裡電腦')`))
+  assert.equal(remoteCalls.filter(call => call.method === 'connect').length, 0)
+  assert.equal(await runRemote(`document.querySelector('#peer-password').value`), '')
+  assert.equal(await runRemote(`document.body.textContent.includes('favorite-qa-secret')`), false)
+  await runRemote(`document.querySelector('#favorites [data-action="connect"]').click()`)
+  await until(() => Promise.resolve(remoteCalls.some(call => call.method === 'connect')))
+  assert.equal(remoteCalls.filter(call => call.method === 'connect').at(-1).params.password, 'favorite-qa-secret')
+  await until(() => runRemote(`!document.querySelector('#favorites [data-action="files"]').disabled`))
+  await runRemote(`document.querySelector('#favorites [data-action="files"]').click()`)
+  await until(() => Promise.resolve(remoteCalls.some(call => call.method === 'connect' && call.params.mode === 'files')))
+  await until(() => runRemote(`!document.querySelector('#favorites [data-action="files"]').disabled`))
+  await runRemote(`document.querySelector('#favorites [data-action="edit"]').click(); document.querySelector('#peer-alias').value = '家裡桌機'; document.querySelector('#save-device').click()`)
+  await until(() => runRemote(`document.querySelector('#favorites').textContent.includes('家裡桌機')`))
+  assert.equal((await apiCall('remote.settings.get')).result.devices[0].hasPassword, true)
+  await runRemote(`document.querySelector('#peer-password').value = 'updated-favorite-qa-secret'; document.querySelector('#save-device').click()`)
+  await until(() => runRemote(`document.querySelector('#peer-password').value === ''`))
+  await runRemote(`document.querySelector('#favorites [data-action="connect"]').click()`)
+  await until(() => Promise.resolve(remoteCalls.filter(call => call.method === 'connect').at(-1).params.password === 'updated-favorite-qa-secret'))
+  await runRemote(`document.querySelector('#favorites-card').scrollIntoView()`)
+  await runRemote(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
+  await fs.writeFile(path.join(root, 'release-output', 'remote-favorites.png'), (await remoteWindow.webContents.capturePage()).toPNG())
+  await runRemote(`document.querySelector('#host-setup').click()`)
+  assert.equal(await runRemote(`document.querySelector('#settings-view').hidden`), false)
+  results.push('Favorite devices save without connecting, reuse protected passwords for desktop/files, edit without exposing passwords and link to host full-access setup')
   remoteWindow.close()
   results.push('mobile P2P preset persists UDP/WebRTC without TCP or forced relay; actual route/FPS rejects stale samples and automatic direct restores TCP')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)

@@ -60,6 +60,55 @@ test('mobile P2P transport preferences persist and override a remembered peer re
   assert.equal(settings.gpu, true)
   assert.equal(settings.hardwareCodec, true)
 })
+test('favorites save offline, migrate remembered devices, update credentials and survive recent-history eviction', async t => {
+  const { directory, service, calls } = fixture(t)
+  await service.dispatch('remote.devices.save', { deviceId: '987654321', alias: 'Home', password: 'fixture-secret' })
+  assert.equal(calls.length, 0)
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].favorite, true)
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].lastUsed, undefined)
+  await service.dispatch('remote.devices.save', { deviceId: '987654321', alias: '' })
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].alias, '')
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].hasPassword, true)
+  for (let index = 0; index < 55; index++) await service.dispatch('remote.connect', { deviceId: String(100000000 + index) })
+  assert.equal((await service.dispatch('remote.settings.get')).devices.length, 51)
+  const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    safeStorage: { isEncryptionAvailable: () => true, decryptString: () => 'fixture-secret' },
+    engineCall: async (method, params) => { calls.push({ method, params }); return {} } })
+  await restarted.dispatch('remote.connect', { deviceId: '987654321', mode: 'files' })
+  assert.equal(calls.at(-1).params.password, 'fixture-secret')
+  assert.equal(calls.at(-1).params.mode, 'files')
+  assert.equal((await restarted.dispatch('remote.settings.get')).devices[0].favorite, true)
+  await restarted.dispatch('remote.devices.save', { deviceId: '987654321', remember: false })
+  assert.equal((await restarted.dispatch('remote.settings.get')).devices[0].hasPassword, false)
+  assert.equal(JSON.stringify(await restarted.dispatch('remote.settings.get')).includes('credential'), false)
+  const stored = JSON.parse(fs.readFileSync(path.join(directory, 'remote.json')))
+  stored.devices[0].credential = Buffer.from('protected-fixture').toString('base64')
+  delete stored.devices[0].favorite
+  fs.writeFileSync(path.join(directory, 'remote.json'), JSON.stringify(stored))
+  const migrated = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
+  assert.equal((await migrated.dispatch('remote.settings.get')).devices[0].favorite, true)
+})
+
+test('favorite validation, credential failures and favorite limit never launch or evict favorites', async t => {
+  const { directory, service, calls } = fixture(t)
+  for (const params of [{ deviceId: 'bad' }, { deviceId: '123456789', favorite: 'yes' }, { deviceId: '123456789', password: 4 }, { deviceId: '123456789', alias: 'x'.repeat(81) }]) {
+    await assert.rejects(service.dispatch('remote.devices.save', params), { apiCode: 'INVALID_PARAMS' })
+  }
+  const insecure = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory, safeStorage: { isEncryptionAvailable: () => false } })
+  await assert.rejects(insecure.dispatch('remote.devices.save', { deviceId: '123456789', password: 'fixture-secret' }), { apiCode: 'CREDENTIAL_UNAVAILABLE' })
+  for (let index = 0; index < 50; index++) await service.dispatch('remote.devices.save', { deviceId: String(100000000 + index) })
+  await assert.rejects(service.dispatch('remote.connect', { deviceId: '987654321', remember: true }), { apiCode: 'INVALID_PARAMS' })
+  assert.equal(calls.length, 0)
+  await service.dispatch('remote.devices.save', { deviceId: '100000000', password: 'fixture-secret' })
+  const broken = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    safeStorage: { isEncryptionAvailable: () => true, decryptString: () => { throw Error('secret must not escape') } },
+    engineCall: async () => { throw Error('Must not launch') } })
+  await assert.rejects(broken.dispatch('remote.connect', { deviceId: '100000000' }), error => error.apiCode === 'CREDENTIAL_UNAVAILABLE' && !error.message.includes('secret must not escape'))
+  const offline = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async () => { throw Object.assign(Error('Offline'), { apiCode: 'REMOTE_NOT_RUNNING' }) } })
+  await offline.dispatch('remote.devices.forget', { deviceId: '100000000' })
+  assert.equal((await offline.dispatch('remote.settings.get')).devices.length, 49)
+})
 test('invalid connection data and unavailable protected storage never launch a session', async t => {
   const { directory, calls, service } = fixture(t)
   await assert.rejects(service.dispatch('remote.connect', { deviceId: '../123456' }), { apiCode: 'INVALID_PARAMS' })
