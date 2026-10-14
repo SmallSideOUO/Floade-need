@@ -41,6 +41,21 @@ test('remembered credentials are protected, redacted, reused and forgotten', asy
   assert.deepEqual((await service.dispatch('remote.settings.get')).devices, [])
 })
 
+test('relative mouse shortcut validates, reaches the engine and persists', async t => {
+  const { directory, calls, service } = fixture(t)
+  assert.equal((await service.dispatch('remote.settings.get')).settings.relativeMouseShortcut, 'Ctrl+Alt')
+  for (const shortcut of ['', 'M', 'Ctrl', 'Ctrl+Ctrl+M', 'Ctrl+M+N', 'F13']) {
+    await assert.rejects(service.dispatch('remote.settings.update', { settings: { relativeMouseShortcut: shortcut } }), { apiCode: 'INVALID_PARAMS' })
+  }
+  assert.equal(calls.length, 0)
+  for (const shortcut of ['Ctrl+Alt+M', 'F8', 'Ctrl+Shift+1', 'Ctrl+Alt']) {
+    await service.dispatch('remote.settings.update', { settings: { relativeMouseShortcut: shortcut } })
+    assert.equal(calls.at(-1).params.settings.relativeMouseShortcut, shortcut)
+    const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
+    assert.equal((await restarted.dispatch('remote.settings.get')).settings.relativeMouseShortcut, shortcut)
+  }
+})
+
 test('mobile P2P transport preferences persist and override a remembered peer relay preference', async t => {
   const { directory, calls, service } = fixture(t)
   await service.dispatch('remote.connect', { deviceId: '123456789', password: 'fixture-secret', remember: true })

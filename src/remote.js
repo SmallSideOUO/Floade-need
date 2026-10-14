@@ -122,12 +122,25 @@ async function connectPeer(mode = 'desktop', saved) {
 }
 $('connect-form').addEventListener('submit', event => { event.preventDefault(); void action(() => connectPeer()) })
 $('files').addEventListener('click', () => void action(() => connectPeer('files')))
+$('relativeMouseShortcut').addEventListener('keydown', event => {
+  if (event.key === 'Tab') return
+  event.preventDefault()
+  if (event.repeat || event.metaKey || event.code === 'AltRight') return
+  const keys = []
+  if (event.ctrlKey) keys.push('Ctrl')
+  if (event.altKey) keys.push('Alt')
+  if (event.shiftKey) keys.push('Shift')
+  const primary = /^Key[A-Z]$/.test(event.code) ? event.code.slice(3) : /^Digit[0-9]$/.test(event.code) ? event.code.slice(5) : /^F([1-9]|1[0-2])$/.test(event.key) ? event.key : ''
+  if (primary) keys.push(primary)
+  if ((!primary && event.ctrlKey && event.altKey) || (primary && (keys.length > 1 || primary.startsWith('F')))) $('relativeMouseShortcut').value = keys.join('+')
+})
+$('reset-relative-shortcut').addEventListener('click', () => { $('relativeMouseShortcut').value = 'Ctrl+Alt' })
 $('copy-id').addEventListener('click', () => void action(async () => { await navigator.clipboard.writeText($('device-id').textContent); message(text('代碼已複製。','Code copied.')) }))
 $('temporary').addEventListener('click', () => void action(async () => { const result = await request('remote.password.temporary'); $('temporary-password').textContent = result.password; setTimeout(() => { $('temporary-password').textContent = '' }, 30000) }))
 $('settings-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => {
   const settings = {}; for (const key of Object.keys(toggles)) settings[key] = $(key).checked
   for (const key of ['fps','quality']) settings[key] = Number($(key).value)
-  for (const key of ['codec','server','relayServer','serverKey','approval','verification']) settings[key] = $(key).value.trim()
+  for (const key of ['codec','server','relayServer','serverKey','approval','verification','relativeMouseShortcut']) settings[key] = $(key).value.trim()
   await request('remote.settings.update', { settings }); await refreshSettings(); message(text('設定已儲存；畫面設定套用至新連線。','Saved; display preferences apply to new connections.'))
 }) })
 $('password-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => { await request('remote.password.set', { password: $('host-password').value }); $('host-password').value = ''; message(text('固定密碼已更新。','Permanent password updated.')) }) })

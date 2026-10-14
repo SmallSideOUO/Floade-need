@@ -59,3 +59,20 @@ Service integration additionally changes `src/core_main.rs` with Floade-only ide
 ## 0.1.25 regression surface
 
 Native `flutter/lib/floade/control.dart` skips an unchanged `stop-service` option when applying Floade settings. On an installed Windows client, writing that option invokes the native service installer even when the value is unchanged, which terminates the managed UI. The three-line guard makes repeated startup/settings application preserve the running service. Explicit changes retain the existing native behavior. No shared Rust path or dependency changes. Validation includes repeated installed startup/settings application and a managed UI restart with the same service PID and device ID.
+
+
+## Relative mouse shortcut (0.1.28)
+
+The default Windows Floade shortcut Ctrl+Alt toggles relative mouse mode in both directions. The configurable chord is local to the controlling computer and scoped to eligible remote desktop keyboard capture. The upstream exit-only path remains in non-Floade builds and on other platforms. No transport, authentication, wire protocol, incoming permissions, Windows installer or service code changes.
+
+| Existing file | Changed runtime path and reason |
+| --- | --- |
+| `src/remote-service.mjs` | Validate, persist and pass `relativeMouseShortcut` to the engine; prevents an unusable shortcut from being stored. |
+| `src/remote.html`, `src/remote.js` | Add shortcut recording and restore controls to the existing remote settings form. |
+| Native `src/keyboard.rs` | Thin Windows Flutter hooks for the Floade-only keyboard interceptor and focus reset; native capture otherwise bypasses Flutter keyboard handling. |
+| Native `flutter/lib/floade/control.dart` | Store the configured chord in the native local options, shared by active remote windows. |
+| Native `flutter/lib/models/model.dart` | Dispatch the new local toggle event from native capture to the existing input model. |
+| Native `flutter/lib/models/input_model.dart` | Release modifiers and tracked modifier events when toggling to avoid stuck Ctrl/Alt; retain the original exit behavior for existing callers. |
+| Native `flutter/lib/models/relative_mouse_model.dart` | Handle the configured chord in Flutter input mode, reset held state on blur, and show the active shortcut in the relative mouse notification. |
+
+New shortcut modules keep parsing and press/release matching out of shared input code. Tests cover both modifier orders, held-key repeat, consumed releases, a custom key after its modifier prefix, extra modifiers, and switching while a game movement key is held. The Electron preview covers recording, saving, native settings dispatch and restoring Ctrl+Alt.

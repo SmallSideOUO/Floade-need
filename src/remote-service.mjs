@@ -15,7 +15,7 @@ export const remoteMethods = {
   'remote.service.status': { description: 'Read actual Windows LocalSystem service and packaged binary readiness for UAC/login access.', params: {} },
   'remote.service.install': { description: 'Install/update the native system service in protected Program Files. Windows UAC consent is required. Close sessions first.', params: {} },
   'remote.settings.get': { description: 'Read remote preferences and saved devices; passwords are redacted.', params: {} },
-  'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, server, relayServer, serverKey, approval, verification' } },
+  'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, relativeMouseShortcut, server, relayServer, serverKey, approval, verification' } },
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
   'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
@@ -27,7 +27,7 @@ export const remoteMethods = {
 }
 const defaults = { fps: 60, quality: 70, codec: 'h264', gpu: true, hardwareCodec: true,
   acceptConnections: true, keyboard: true, clipboard: true, fileTransfer: true,
-  forceRelay: false, tcpPunch: true, udpPunch: true, webrtc: true,
+  forceRelay: false, tcpPunch: true, udpPunch: true, webrtc: true, relativeMouseShortcut: 'Ctrl+Alt',
   server: '', relayServer: '', serverKey: '', approval: 'password', verification: 'use-both-passwords' }
 function fail(code, message) { throw Object.assign(new Error(message), { apiCode: code }) }
 export function validateRemoteSettings(patch) {
@@ -40,6 +40,13 @@ export function validateRemoteSettings(patch) {
     if (key === 'codec' && !['auto', 'h264', 'h265', 'vp8', 'vp9', 'av1'].includes(value)) fail('INVALID_PARAMS', 'Unsupported codec.')
     if (key === 'approval' && value !== 'password') fail('INVALID_PARAMS', 'Floade remote connections require password authentication.')
     if (key === 'verification' && !['use-both-passwords', 'use-permanent-password', 'use-temporary-password'].includes(value)) fail('INVALID_PARAMS', 'Unsupported password mode.')
+    if (key === 'relativeMouseShortcut') {
+      const keys = value.split('+')
+      const primary = keys.filter(key => !['Ctrl', 'Alt', 'Shift'].includes(key))
+      if (new Set(keys).size !== keys.length || keys.some(key => !/^(Ctrl|Alt|Shift|[A-Z0-9]|F([1-9]|1[0-2]))$/.test(key)) ||
+          primary.length > 1 || (primary.length === 0 && !(keys.includes('Ctrl') && keys.includes('Alt'))) ||
+          (primary.length === 1 && keys.length === 1 && !primary[0].startsWith('F'))) fail('INVALID_PARAMS', 'Use Ctrl+Alt, a modifier with a letter or digit, or F1–F12 for the relative mouse shortcut.')
+    }
     if (typeof value === 'string' && (value.length > 512 || /[\r\n\0]/.test(value))) fail('INVALID_PARAMS', `Invalid value for ${key}`)
   }
   return patch

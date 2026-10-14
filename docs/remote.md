@@ -39,6 +39,12 @@ The connection page displays the actual sampled P2P/relay route and per-display 
 
 ## Native engine and installation
 
+### Relative mouse shortcut (0.1.28)
+
+On Windows, click inside a remote desktop image and press **Ctrl+Alt** to toggle relative mouse movement on or off. The shortcut is handled locally, fires once per press, and releases remote modifier keys when switching. It only applies to eligible desktop sessions with keyboard permission and a supported peer; it is not a system-wide shortcut.
+
+Under **Remote settings → Relative mouse shortcut**, focus the shortcut field, press a new combination, and save. For example, use **Ctrl+Alt+M**, **Ctrl+Shift+1**, or **F8**. **Restore Ctrl+Alt** resets the field; save to apply it. The preference persists on this controlling computer and applies to its existing and future remote windows once the updated runtime is loaded. The API setting is `relativeMouseShortcut`.
+
 Runtime files live in resources/remote. The frontend and helper server can continue receiving connections after the Floade panel closes. The default runtime operates within the signed-in user's desktop. Windows login-screen/UAC access requires installing the engine's native system service from Advanced tools, with Windows administrator privileges; this is separate from installing the per-user Floade app. An existing RustDesk service is preserved.
 
 Before updating, close native session windows through remote.shutdown, then stop only processes whose exact executable path is the bundled resources/remote/FloadeRemote.exe. Do not stop the user's unrelated RustDesk processes. Back up Floade configuration and the engine profile first. Preserve folders.json, remote.json, native identity/credentials and the standalone Work Map profile.
