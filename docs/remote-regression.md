@@ -1,5 +1,15 @@
 # Floade 0.1.22 regression surface
 
+## 0.1.29 connection persistence and Windows relative input
+
+- `src/remote-service.mjs`: reread persisted state before dispatch and before mutation, merge saved preferences with the latest devices, and flush the temporary file before replacement. Necessary because a restored on-disk favorite was invisible to a running controller with stale state; subsequent writes could overwrite it.
+- `tests/remote-service.test.mjs`: regressions for a running controller observing externally saved devices and preserving a device saved while an asynchronous settings operation is pending.
+- Native `relative_mouse_model.dart`: Floade Windows raw-input lifecycle; other input modes retain their prior path. `input_model.dart`: suppress absolute canvas updates while this mode is active to prevent game camera jumps.
+- Native Windows runner `flutter_window.cpp` and CMake: register and compile the new raw-input plugin for remote subwindows. The plugin confines/releases the cursor and collects foreground WM_INPUT counts; the Dart helper sends accumulated deltas every 8 ms without coordinate or DPI scaling. No wire protocol, Rust library, dependencies, host permissions or service installer changes.
+- Package version, source pin and remote documentation ship the matching native frontend. User Work Map edits are excluded from the release staging tree.
+
+Validation: 52 Node tests, syntax checks, remote Electron preview flow, raw-count/focus-loss and existing shortcut Flutter tests, native Windows release build, installer/runtime hashes, installed favorite restart checks and updater metadata. Physical in-game sensitivity and actual machine reboot are separate manual checks.
+
 The release preserves the Work Map and Push commits already on main. The integration adds feature modules instead of moving existing document, translation, sync or media behavior into a new abstraction.
 
 ## Existing Floade paths changed

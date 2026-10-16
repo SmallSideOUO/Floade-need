@@ -4,6 +4,8 @@ The floating dot has a Remote action below Add folder. It opens the local device
 
 The device code is generated separately on each device. Never copy FloadeRemote.toml, host key material, or encrypted remote.json between devices. Only the hardware codec cache may be reused from RustDesk on the same Windows installation. Floade stores its remote preferences separately from folders.json and Work Map data.
 
+In 0.1.29, the controller rereads saved remote preferences/devices before requests and merges writes against the current file. A running controller no longer hides a device restored on disk or replaces it with its stale in-memory list during a later settings write. Writes flush their temporary file before atomic replacement. This preserves favorites across ordinary restarts; credentials remain protected by the same Windows account.
+
 ## Local API
 
 Call api.describe for the authoritative list. remote.settings.get redacts remembered credentials. remote.password.temporary is the explicit operation that reveals the temporary password. Authentication, password checks and local approval remain enforced by RustDesk.
@@ -40,6 +42,8 @@ The connection page displays the actual sampled P2P/relay route and per-display 
 ## Native engine and installation
 
 ### Relative mouse shortcut (0.1.28)
+
+From 0.1.29, Windows Floade relative mode uses foreground raw mouse counts at an 8 ms polling interval, independent of display scaling and cursor recentering. Absolute canvas refresh/edge events are suppressed while it is active. Losing focus or moving the window exits the mode and releases the cursor; use the shortcut again after refocusing. This fix is on the controlling computer. Games that reject simulated input still depend on their own input policy.
 
 On Windows, click inside a remote desktop image and press **Ctrl+Alt** to toggle relative mouse movement on or off. The shortcut is handled locally, fires once per press, and releases remote modifier keys when switching. It only applies to eligible desktop sessions with keyboard permission and a supported peer; it is not a system-wide shortcut.
 

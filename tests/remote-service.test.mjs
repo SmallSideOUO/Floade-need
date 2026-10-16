@@ -41,6 +41,34 @@ test('remembered credentials are protected, redacted, reused and forgotten', asy
   assert.deepEqual((await service.dispatch('remote.settings.get')).devices, [])
 })
 
+test('a running controller reloads saved devices and preserves them across settings writes and restart', async t => {
+  const { directory, service } = fixture(t)
+  const writer = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
+  await writer.dispatch('remote.devices.save', { deviceId: '987654321', alias: 'Home' })
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].alias, 'Home')
+  await service.dispatch('remote.settings.update', { settings: { quality: 80 } })
+  const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
+  assert.equal((await restarted.dispatch('remote.settings.get')).devices[0].deviceId, '987654321')
+  assert.equal((await restarted.dispatch('remote.settings.get')).settings.quality, 80)
+})
+
+test('saving a device while engine settings are pending does not lose the device', async t => {
+  const { directory } = fixture(t)
+  let releaseApply
+  const pendingApply = new Promise(resolve => { releaseApply = resolve })
+  let startedApply
+  const started = new Promise(resolve => { startedApply = resolve })
+  const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async method => { if (method === 'apply') { startedApply(); await pendingApply } return {} } })
+  const updating = service.dispatch('remote.settings.update', { settings: { quality: 80 } })
+  await started
+  const writer = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
+  await writer.dispatch('remote.devices.save', { deviceId: '987654321', alias: 'Home' })
+  releaseApply()
+  await updating
+  assert.equal((await service.dispatch('remote.settings.get')).devices[0].alias, 'Home')
+})
+
 test('relative mouse shortcut validates, reaches the engine and persists', async t => {
   const { directory, calls, service } = fixture(t)
   assert.equal((await service.dispatch('remote.settings.get')).settings.relativeMouseShortcut, 'Ctrl+Alt')

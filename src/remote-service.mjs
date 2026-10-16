@@ -61,15 +61,20 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
   const controlFile = path.join(process.env.APPDATA || dataDirectory, 'FloadeRemote', 'control.json')
   const executable = path.join(runtimeDirectory, 'FloadeRemote.exe')
   let state = { settings: { ...defaults }, devices: [] }
-  if (fs.existsSync(file)) {
+  const reload = () => {
+    if (!fs.existsSync(file)) return
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'))
     state = { settings: { ...defaults, ...validateRemoteSettings(stored.settings || {}) }, devices: Array.isArray(stored.devices) ? stored.devices : [] }
   }
+  reload()
   let starting
   let verified = false
-  const save = next => {
+  const save = update => {
+    reload()
+    const next = update(state)
     fs.mkdirSync(dataDirectory, { recursive: true })
-    fs.writeFileSync(`${file}.tmp`, JSON.stringify(next, null, 2), { mode: 0o600 })
+    const fd = fs.openSync(`${file}.tmp`, 'w', 0o600)
+    try { fs.writeFileSync(fd, JSON.stringify(next, null, 2)); fs.fsyncSync(fd) } finally { fs.closeSync(fd) }
     fs.renameSync(`${file}.tmp`, file)
     state = next
   }
@@ -155,6 +160,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     return starting
   }
   async function dispatch(method, p = {}) {
+    reload()
     if (method === 'remote.service.status') return windowsService.status()
     if (method === 'remote.service.install') {
       let status
@@ -200,14 +206,14 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const settings = { ...state.settings, ...validateRemoteSettings(p.settings) }
       await start()
       await call('apply', { settings })
-      save({ ...state, settings })
+      save(current => ({ ...current, settings: { ...current.settings, ...p.settings } }))
       return { ...publicState(), appliesTo: 'new connections for display settings' }
     }
     if (method === 'remote.devices.forget') {
       const id = deviceCode(p.deviceId)
       // Local removal works even when the engine is offline.
       try { await call('forget', { deviceId: id }) } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
-      save({ ...state, devices: state.devices.filter(d => d.deviceId !== id) })
+      save(current => ({ ...current, devices: current.devices.filter(d => d.deviceId !== id) }))
       return { forgotten: true }
     }
     if (method === 'remote.devices.save') {
@@ -216,7 +222,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const credential = protectedCredential({ ...p, remember: p.remember ?? true }, previous)
       const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
         ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(credential ? { credential } : {}) }
-      save({ ...state, devices: withDevice(device) })
+      save(current => ({ ...current, devices: withDevice(device) }))
       return publicState()
     }
     if (method === 'remote.connect') {
@@ -234,7 +240,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       withDevice(device) // Validate the favorite limit before opening a session.
       await start()
       const result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings })
-      save({ ...state, devices: withDevice(device) })
+      save(current => ({ ...current, devices: withDevice(device) }))
       return { ...result, deviceId: id, remembered: Boolean(credential) }
     }
     if (method === 'remote.password.set') {
