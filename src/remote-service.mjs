@@ -1,3 +1,6 @@
+import { createEngineSupervisor } from './remote-engine-supervisor.mjs'
+import { createAutoConnector } from './remote-auto-connect.mjs'
+import { recoverRemoteProfile, remoteProfileSources } from './remote-profile.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, execFile } from 'node:child_process'
@@ -15,10 +18,11 @@ export const remoteMethods = {
   'remote.service.status': { description: 'Read actual Windows LocalSystem service and packaged binary readiness for UAC/login access.', params: {} },
   'remote.service.install': { description: 'Install/update the native system service in protected Program Files. Windows UAC consent is required. Close sessions first.', params: {} },
   'remote.settings.get': { description: 'Read remote preferences and saved devices; passwords are redacted.', params: {} },
-  'remote.settings.update': { description: 'Update validated remote preferences. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, forceRelay, tcpPunch, udpPunch, webrtc, relativeMouseShortcut, server, relayServer, serverKey, approval, verification' } },
+  'remote.settings.update': { description: 'Update validated remote preferences. Direct P2P only; relay is disabled. Display changes apply to new sessions.', params: { settings: 'object: fps, quality, codec, gpu, hardwareCodec, acceptConnections, keyboard, clipboard, fileTransfer, connectionMode (auto/manual), tcpPunch, udpPunch, webrtc, relativeMouseShortcut, server, serverKey, approval, verification' } },
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
   'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
+  'remote.connection.cancel': { description: 'Stop automatic connection attempts and close its session.', params: {} },
   'remote.disconnect': { description: 'Close one native session window.', params: { windowId: 'integer from remote.status' } },
   'remote.devices.forget': { description: 'Remove a saved device and its protected credential.', params: { deviceId: 'numeric device code' } },
   'remote.devices.save': { description: 'Add/update a favorite without connecting. Credentials use Windows protected storage and are never returned.', params: { deviceId: 'numeric device code', alias: 'optional name', password: 'optional write-only permanent password; omitted or empty preserves saved password', remember: 'optional boolean; false removes saved password', favorite: 'optional boolean; defaults to true' } },
@@ -27,7 +31,7 @@ export const remoteMethods = {
 }
 const defaults = { fps: 60, quality: 70, codec: 'h264', gpu: true, hardwareCodec: true,
   acceptConnections: true, keyboard: true, clipboard: true, fileTransfer: true,
-  forceRelay: false, tcpPunch: true, udpPunch: true, webrtc: true, relativeMouseShortcut: 'Ctrl+Alt',
+  connectionMode: 'auto', forceRelay: false, tcpPunch: true, udpPunch: true, webrtc: true, relativeMouseShortcut: 'Ctrl+Alt',
   server: '', relayServer: '', serverKey: '', approval: 'password', verification: 'use-both-passwords' }
 function fail(code, message) { throw Object.assign(new Error(message), { apiCode: code }) }
 export function validateRemoteSettings(patch) {
@@ -35,6 +39,7 @@ export function validateRemoteSettings(patch) {
   for (const [key, value] of Object.entries(patch)) {
     if (!Object.hasOwn(defaults, key)) fail('INVALID_PARAMS', `Unknown remote setting: ${key}`)
     if (typeof value !== typeof defaults[key]) fail('INVALID_PARAMS', `Invalid type for ${key}`)
+    if (key === 'connectionMode' && !['auto', 'manual'].includes(value)) fail('INVALID_PARAMS', 'connectionMode must be auto or manual.')
     if (key === 'fps' && (!Number.isInteger(value) || value < 10 || value > 120)) fail('INVALID_PARAMS', 'fps must be 10–120.')
     if (key === 'quality' && (!Number.isInteger(value) || value < 10 || value > 100)) fail('INVALID_PARAMS', 'quality must be 10–100.')
     if (key === 'codec' && !['auto', 'h264', 'h265', 'vp8', 'vp9', 'av1'].includes(value)) fail('INVALID_PARAMS', 'Unsupported codec.')
@@ -56,20 +61,26 @@ const deviceCode = value => {
   return value
 }
 
-export function createRemoteService({ dataDirectory, runtimeDirectory, safeStorage, engineCall, launch = spawn, windowsService = createRemoteWindowsService(runtimeDirectory) }) {
+export function createRemoteService({ dataDirectory, runtimeDirectory, safeStorage, engineCall, launch = spawn, windowsService = createRemoteWindowsService(runtimeDirectory), legacyProfileSources = remoteProfileSources(dataDirectory) }) {
   const file = path.join(dataDirectory, 'remote.json')
+  let recoveryError
+  try { recoverRemoteProfile(file, legacyProfileSources, validateRemoteSettings, safeStorage) }
+  catch { recoveryError = true; console.warn('Floade remote: saved profile recovery needs attention; original data is preserved.') }
+  const requireRecoveredProfile = () => {
+    if (recoveryError) fail('REMOTE_PROFILE_RECOVERY_FAILED', 'Saved remote devices could not be recovered. Original data is preserved; do not replace the saved passwords.')
+  }
   const controlFile = path.join(process.env.APPDATA || dataDirectory, 'FloadeRemote', 'control.json')
   const executable = path.join(runtimeDirectory, 'FloadeRemote.exe')
   let state = { settings: { ...defaults }, devices: [] }
   const reload = () => {
     if (!fs.existsSync(file)) return
     const stored = JSON.parse(fs.readFileSync(file, 'utf8'))
-    state = { settings: { ...defaults, ...validateRemoteSettings(stored.settings || {}) }, devices: Array.isArray(stored.devices) ? stored.devices : [] }
+    state = { settings: { ...defaults, ...validateRemoteSettings(stored.settings || {}), forceRelay: false, relayServer: '' }, devices: Array.isArray(stored.devices) ? stored.devices : [] }
   }
   reload()
-  let starting
   let verified = false
   const save = update => {
+    requireRecoveredProfile()
     reload()
     const next = update(state)
     fs.mkdirSync(dataDirectory, { recursive: true })
@@ -102,7 +113,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     const all = [device, ...others]
     return [...all.filter(isFavorite), ...all.filter(d => !isFavorite(d)).slice(0, 50)]
   }
-  async function call(method, params = {}) {
+  async function call(method, params = {}, timeout = 15000) {
     if (engineCall) return engineCall(method, params)
     let endpoint
     try { endpoint = JSON.parse(fs.readFileSync(controlFile, 'utf8')) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine is not running.') }
@@ -113,17 +124,25 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     try {
       response = await fetch(`http://127.0.0.1:${endpoint.port}/command`, {
         method: 'POST', headers: { 'content-type': 'application/json', 'x-floade-token': endpoint.token },
-        body: JSON.stringify({ method, params }), signal: AbortSignal.timeout(15000), redirect: 'error'
+        body: JSON.stringify({ method, params }), signal: AbortSignal.timeout(timeout), redirect: 'error'
       })
     } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine is unavailable; start it again.') }
     const message = await response.json()
     if (!response.ok || !message.ok) fail(message.error?.code || 'REMOTE_ENGINE_FAILED', message.error?.message || 'Remote engine request failed.')
     return message.result
   }
-  async function start() {
-    try { const status = await call('status'); await call('apply', { settings: state.settings }); return status } catch (error) { if (engineCall || error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
-    if (starting) return starting
-    starting = (async () => {
+  const automatic = createAutoConnector({ call, recover: () => start(), settings: () => state.settings,
+    remember: (id, profile) => save(current => ({ ...current, devices: current.devices.map(device => device.deviceId === id ? { ...device, connectionProfile: profile } : device) })) })
+  const engine = createEngineSupervisor({ start: startOnce, probe: () => call('status', {}, 1500) })
+  const start = () => engine.ensure()
+  async function startOnce(signal) {
+    const requireDirectOnly = status => {
+      if (status.directOnly !== true) fail('REMOTE_ENGINE_UPDATE_REQUIRED', 'Update the remote engine and Windows service: this Floade version requires direct P2P without relay.')
+      return status
+    }
+    try { const status = requireDirectOnly(await call('status', {}, 1500)); if (!automatic.active) await call('apply', { settings: state.settings }); return status } catch (error) { if (engineCall || error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
+    if (signal.aborted) fail('REMOTE_START_CANCELLED', 'Remote startup cancelled.')
+    {
       if (!fs.existsSync(executable)) fail('REMOTE_RUNTIME_MISSING', 'Install the Floade release containing the remote engine.')
       const cache = path.join(process.env.APPDATA || dataDirectory, 'RustDesk', 'config', 'RustDesk_hwcodec.toml')
       const nativeConfig = path.join(path.dirname(controlFile), 'config')
@@ -143,30 +162,47 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const system = process.platform === 'win32' && !engineCall ? await windowsService.status() : null
       if (system?.installed && !system.launchExecutable) fail('REMOTE_SERVICE_UPDATE_REQUIRED', 'Update the Windows system service to match this Floade version.')
       const launchExecutable = system?.launchExecutable || executable
+      if (signal.aborted) fail('REMOTE_START_CANCELLED', 'Remote startup cancelled.')
       const child = launch(launchExecutable, ['--floade-managed'], { cwd: path.dirname(launchExecutable), detached: true, stdio: 'ignore', windowsHide: true,
         env: { ...process.env, FLOADE_RUSTDESK_TEST_PROFILE: '0', FLOADE_RUSTDESK_LOW_LATENCY: '1', RUST_LOG: 'info,webrtc=error,webrtc_ice=error,webrtc_sctp=error,turn=error' } })
       let launchError
+      let ready = false
       child.once('error', () => { launchError = true })
       child.unref()
-      for (let attempt = 0; attempt < 80; attempt++) {
-        if (launchError) fail('REMOTE_START_FAILED', 'Could not start the remote engine.')
-        await new Promise(resolve => setTimeout(resolve, 250))
-        try { const status = await call('status'); await call('apply', { settings: state.settings }); return status } catch (error) {
-          if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error
+      try {
+        const deadline = Date.now() + 15000
+        while (Date.now() < deadline) {
+          if (signal.aborted) fail('REMOTE_START_CANCELLED', 'Remote startup cancelled.')
+          if (launchError) fail('REMOTE_START_FAILED', 'Could not start the remote engine.')
+          await new Promise(resolve => setTimeout(resolve, 250))
+          try {
+            const status = requireDirectOnly(await call('status', {}, Math.min(1500, Math.max(1, deadline - Date.now()))))
+            if (signal.aborted) fail('REMOTE_START_CANCELLED', 'Remote startup cancelled.')
+            if (!automatic.active) await call('apply', { settings: state.settings })
+            ready = true
+            return status
+          } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
         }
+        fail('REMOTE_START_FAILED', 'Remote engine is recovering in the background; please wait and retry.')
+      } finally {
+        // Only stop the process this attempt launched, never an existing native window or system service.
+        if (!ready && child.exitCode === null && !child.killed) child.kill()
       }
-      fail('REMOTE_START_FAILED', 'Remote engine did not become ready in time.')
-    })().finally(() => { starting = undefined })
-    return starting
+    }
   }
+
   async function dispatch(method, p = {}) {
+    if (['remote.settings.get', 'remote.settings.update', 'remote.devices.save', 'remote.devices.forget', 'remote.connect'].includes(method)) requireRecoveredProfile()
     reload()
     if (method === 'remote.service.status') return windowsService.status()
     if (method === 'remote.service.install') {
       let status
       try { status = await call('status') } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
       if (status?.windows?.length || status?.connection?.video_conn_count > 0) fail('REMOTE_BUSY', 'Close remote sessions before installing the system service.')
-      return windowsService.install()
+      engine.stop()
+      const result = await windowsService.install()
+      void start().catch(() => {})
+      return result
     }
     if (method === 'remote.access.get') { await start(); return call('accessGet') }
     if (['remote.access.grant', 'remote.access.revoke', 'remote.access.disable'].includes(method)) {
@@ -196,17 +232,21 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       return { available: samples.size > 0, delayMeaning: 'shared-channel probe and processing; not input-to-display latency', samples: [...samples.values()] }
     }
     if (method === 'remote.status') {
-      try { return { available: true, running: true, ...await call('status') } } catch (error) {
+      try { return { available: true, running: true, ...await call('status', {}, 1500), engine: engine.snapshot(), automatic: automatic.snapshot() } } catch (error) {
         if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error
-        return { available: fs.existsSync(executable), running: false }
+        return { available: fs.existsSync(executable), running: false, engine: engine.snapshot(), automatic: automatic.snapshot() }
       }
     }
     if (method === 'remote.start') return start()
     if (method === 'remote.settings.update') {
-      const settings = { ...state.settings, ...validateRemoteSettings(p.settings) }
+      if (p.settings?.forceRelay === true || p.settings?.relayServer) fail('INVALID_PARAMS', 'Floade only supports direct P2P connections; relay is disabled.')
+      const patch = { ...validateRemoteSettings(p.settings) }
+      if (!Object.hasOwn(patch, 'connectionMode') && ['tcpPunch', 'udpPunch', 'webrtc'].some(key => Object.hasOwn(patch, key))) patch.connectionMode = 'manual'
+      if (automatic.active) fail('REMOTE_BUSY', 'Stop the automatic connection before changing remote settings.')
+      const settings = { ...state.settings, ...patch }
       await start()
       await call('apply', { settings })
-      save(current => ({ ...current, settings: { ...current.settings, ...p.settings } }))
+      save(current => ({ ...current, settings: { ...current.settings, ...patch } }))
       return { ...publicState(), appliesTo: 'new connections for display settings' }
     }
     if (method === 'remote.devices.forget') {
@@ -221,7 +261,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const previous = state.devices.find(d => d.deviceId === id)
       const credential = protectedCredential({ ...p, remember: p.remember ?? true }, previous)
       const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
-        ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(credential ? { credential } : {}) }
+        ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
       save(current => ({ ...current, devices: withDevice(device) }))
       return publicState()
     }
@@ -236,10 +276,13 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
         catch { fail('CREDENTIAL_UNAVAILABLE', 'Saved password cannot be read on this Windows account; update the device password.') }
       }
       const credential = protectedCredential({ ...p, password }, previous)
-      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(credential ? { credential } : {}) }
+      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
       withDevice(device) // Validate the favorite limit before opening a session.
-      await start()
-      const result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings })
+      if (automatic.active) fail('REMOTE_BUSY', 'Stop the current automatic connection before opening another session.')
+      let result
+      if (state.settings.connectionMode === 'auto') {
+        result = await automatic.connect({ deviceId: id, password, mode: p.mode || 'desktop', preferred: previous?.connectionProfile })
+      } else { await start(); result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings }) }
       save(current => ({ ...current, devices: withDevice(device) }))
       return { ...result, deviceId: id, remembered: Boolean(credential) }
     }
@@ -249,18 +292,30 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       return call('password', { password: p.password })
     }
     if (method === 'remote.password.temporary') { await start(); return call('temporaryPassword') }
+    if (method === 'remote.connection.cancel') {
+      const current = automatic.snapshot()
+      automatic.cancel()
+      if (current?.windowId && current.state !== 'cancelled') {
+        const observed = await call('sessionStatus', { windowId: current.windowId, deviceId: current.deviceId })
+        if (observed.state !== 'closed') await call('disconnect', { windowId: current.windowId })
+      }
+      return { cancelled: true }
+    }
     if (method === 'remote.disconnect') {
       if (!Number.isInteger(p.windowId) || p.windowId <= 0) fail('INVALID_PARAMS', 'windowId must be a native session window ID.')
+      if (automatic.snapshot()?.windowId === p.windowId) automatic.cancel()
       return call('disconnect', { windowId: p.windowId })
     }
     if (method === 'remote.advanced.open') { await start(); return call('advanced') }
-    if (method === 'remote.shutdown') return call('shutdown')
+    if (method === 'remote.shutdown') { engine.stop(); automatic.cancel(); return call('shutdown') }
     fail('METHOD_NOT_FOUND', 'Unknown remote operation.')
   }
   async function prepareUpdate() {
     let status
     try { status = await call('status') } catch (error) { if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error }
     if (status?.windows?.length || status?.connection?.video_conn_count > 0) fail('REMOTE_BUSY', 'Close remote sessions before installing the update.')
+    engine.stop()
+    automatic.cancel()
     if (status) { await call('shutdown'); await new Promise(resolve => setTimeout(resolve, 500)) }
     if (process.platform === 'win32' && fs.existsSync(executable)) {
       const script = "$target = [Environment]::GetEnvironmentVariable('FLOADE_REMOTE_UPDATE_EXE'); Get-CimInstance Win32_Process -Filter \"Name='FloadeRemote.exe'\" | Where-Object { $_.ExecutablePath -eq $target } | ForEach-Object { Stop-Process -Id $_.ProcessId -ErrorAction Stop }"
@@ -270,5 +325,5 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     }
     return true
   }
-  return { dispatch, start, prepareUpdate }
+  return { dispatch, start, prepareUpdate, dispose: () => { engine.stop(); automatic.cancel() } }
 }

@@ -5,15 +5,15 @@ const text = (zh, en) => english ? en : zh
 let savedDevices = []
 let connecting = false
 if (english) { document.documentElement.lang = 'en'; for (const el of document.querySelectorAll('[data-en]')) el.textContent = el.dataset.en }
-const toggles = { acceptConnections: ['允許遠端連線','Allow incoming connections'], keyboard: ['允許鍵盤與滑鼠','Allow keyboard and mouse'], clipboard: ['分享剪貼簿','Share clipboard'], fileTransfer: ['允許檔案傳輸','Allow file transfer'], gpu: ['GPU 解碼與顯示','GPU decoding and presentation'], hardwareCodec: ['硬體編解碼','Hardware encoding and decoding'], forceRelay: ['強制中繼連線','Force relay connection'], tcpPunch: ['TCP 直連','TCP direct connection'], udpPunch: ['UDP 直連','UDP direct connection'], webrtc: ['WebRTC 直連','WebRTC direct connection'] }
+const toggles = { acceptConnections: ['允許遠端連線','Allow incoming connections'], keyboard: ['允許鍵盤與滑鼠','Allow keyboard and mouse'], clipboard: ['分享剪貼簿','Share clipboard'], fileTransfer: ['允許檔案傳輸','Allow file transfer'], gpu: ['GPU 解碼與顯示','GPU decoding and presentation'], hardwareCodec: ['硬體編解碼','Hardware encoding and decoding'], tcpPunch: ['TCP 直連','TCP direct connection'], udpPunch: ['UDP 直連','UDP direct connection'], webrtc: ['WebRTC 直連','WebRTC direct connection'] }
 for (const [key, label] of Object.entries(toggles)) {
   const row = document.createElement('label'); row.className = 'toggle'
   const input = document.createElement('input'); input.type = 'checkbox'; input.id = key
   const caption = document.createElement('span'); caption.textContent = text(...label)
   row.append(input, caption); $('toggles').append(row)
 }
-function message(value, error = false) { $('message').textContent = value; $('message').classList.toggle('error', error) }
-async function request(method, params) { const result = await api.request(method, params); if (!result.ok) throw new Error(result.error.message); return result.result }
+function message(value, error = false) { delete $('message').dataset.engineWait; $('message').textContent = value; $('message').classList.toggle('error', error) }
+async function request(method, params) { const result = await api.request(method, params); if (!result.ok) throw Object.assign(new Error(result.error.message), { apiCode: result.error.code }); return result.result }
 async function action(fn) { try { await fn() } catch (error) { message(error.message, true) } }
 function view(name) { $('connect-view').hidden = name !== 'connect'; $('settings-view').hidden = name !== 'settings'; for (const button of document.querySelectorAll('[data-view]')) button.classList.toggle('selected', button.dataset.view === name) }
 for (const button of document.querySelectorAll('[data-view]')) button.addEventListener('click', () => view(button.dataset.view))
@@ -24,9 +24,8 @@ async function refreshSettings() {
   const result = await request('remote.settings.get')
   for (const [key, value] of Object.entries(result.settings)) { const el = $(key); if (el) { if (el.type === 'checkbox') el.checked = value; else el.value = value } }
   const s = result.settings
-  $('network-profile').textContent = s.forceRelay ? text('目前設定：強制中繼','Current preference: force relay')
-    : !s.tcpPunch && s.udpPunch && s.webrtc ? text('目前設定：手機網路 P2P（UDP／WebRTC）','Current preference: mobile network P2P (UDP / WebRTC)')
-    : text('目前設定：自訂／自動直連','Current preference: custom / automatic direct connection')
+  $('network-profile').textContent = s.connectionMode === 'auto' ? text('僅限直連：自動切換 7 組連線方式','Direct only: automatically try 7 connection profiles') : !s.tcpPunch && s.udpPunch && s.webrtc ? text('僅限直連：手機網路 P2P（UDP／WebRTC）','Direct only: mobile network P2P (UDP / WebRTC)')
+    : text('僅限直連：自訂／自動直連','Direct only: custom / automatic direct connection')
   savedDevices = result.devices
   for (const [container, favorites] of [[$('favorites'), true], [$('devices'), false]]) {
     container.replaceChildren()
@@ -68,7 +67,17 @@ async function connectSaved(device, mode = 'desktop') {
 async function refreshStatus() {
   const result = await request('remote.status')
   $('device-id').textContent = result.deviceId || '—'
-  $('engine-status').textContent = result.running ? (result.connection?.status_num > 0 ? text('可接受連線','Ready for connections') : text('引擎已啟動，正在連線至 ID 伺服器','Engine running; contacting ID server')) : text('遠端引擎尚未啟動','Remote engine stopped')
+  if (result.running && $('message').dataset.engineWait) message(text('遠端引擎已恢復，可以連線。','The remote engine has recovered and is ready.'))
+  $('engine-status').textContent = result.running ? (result.connection?.status_num > 0 ? text('可接受連線','Ready for connections') : text('引擎已啟動，正在連線至 ID 伺服器','Engine running; contacting ID server')) : result.engine?.state === 'blocked' ? text('遠端引擎需要更新或檢查安裝','Remote engine needs an update or installation check') : text('正在背景啟動／恢復遠端引擎…','Starting / recovering the remote engine in the background…')
+  const automatic = result.automatic
+  $('cancel-connection').hidden = !automatic || automatic.state === 'cancelled'
+  $('automatic-status').textContent = !automatic || automatic.state === 'cancelled' ? ''
+    : ['waiting', 'recovering-engine'].includes(automatic.state) ? text(`正在${automatic.state === 'recovering-engine' ? '恢復遠端引擎' : '等待網路／對方裝置'}，約 ${Math.max(0, Math.ceil((automatic.nextRetryAt - Date.now()) / 1000))} 秒後自動重試。`,`Recovering ${automatic.state === 'recovering-engine' ? 'the remote engine' : 'the connection'}; retrying in ${Math.max(0, Math.ceil((automatic.nextRetryAt - Date.now()) / 1000))}s.`)
+    : automatic.state === 'exhausted' ? text('7 組直連方式均未成功。請確認對方在線與網路，或用手動設定後重試。','All 7 direct profiles failed. Check the remote device and network, or retry with manual settings.')
+    : automatic.state === 'user-action' ? text('需要密碼或權限確認，已停止自動切換。請查看遠端視窗。','Authentication or permission needs attention. Automatic switching stopped; check the remote window.')
+    : automatic.state === 'engine-error' ? text('遠端引擎無法回應，已停止自動切換。','Remote engine unavailable; automatic switching stopped.')
+    : automatic.state === 'connected' ? text(`P2P 已穩定連線：${automatic.profile}；斷線時會自動嘗試其他方式。`,`Stable P2P: ${automatic.profile}; other profiles will be tried if the connection drops.`)
+    : text(`正在自動嘗試 ${automatic.attempt}／${automatic.total}：${automatic.profile}，並確認畫面穩定…`,`Trying ${automatic.attempt}/${automatic.total}: ${automatic.profile}; checking connection stability…`)
   if (!result.windows?.length) { $('connection-route').textContent = text('尚無作用中的對外連線。','No active outgoing connection.'); return }
   const metrics = await request('remote.metrics')
   const samples = (metrics.samples || []).filter(sample => sample.fresh).sort((a, b) => b.sample_unix_ms - a.sample_unix_ms)
@@ -78,10 +87,11 @@ async function refreshStatus() {
   }).join(' · ') : text('連線中，等待畫面資料…','Connecting; waiting for video data…')
 }
 async function setNetworkProfile(tcpPunch) {
-  await request('remote.settings.update', { settings: { forceRelay: false, tcpPunch, udpPunch: true, webrtc: true } })
+  await request('remote.settings.update', { settings: { connectionMode: tcpPunch ? 'auto' : 'manual', forceRelay: false, tcpPunch, udpPunch: true, webrtc: true } })
   await refreshSettings()
-  message(text('連線路徑已儲存，請重新連線以套用。','Connection preference saved; reconnect to apply.'))
+  message(text('連線方式已儲存，下一次連線時套用。','Connection mode saved for the next connection.'))
 }
+$('cancel-connection').addEventListener('click', () => void action(async () => { await request('remote.connection.cancel'); await refreshStatus() }))
 $('mobile-p2p').addEventListener('click', () => void action(() => setNetworkProfile(false)))
 $('automatic-direct').addEventListener('click', () => void action(() => setNetworkProfile(true)))
 async function refreshAccess() {
@@ -117,7 +127,7 @@ async function connectPeer(mode = 'desktop', saved) {
   try {
     const id = $('peer-id').value.replace(/\s/g, '')
     const result = await request('remote.connect', { ...(saved || { deviceId: id, password: $('peer-password').value || undefined, remember: $('remember').checked, favorite: $('remember').checked || savedDevices.find(d => d.deviceId === id)?.favorite || false, alias: $('peer-alias').value }), mode })
-    $('peer-password').value = ''; message(text('正在連線，請在遠端視窗查看登入結果。','Connecting; authentication appears in the remote window.')); await refreshSettings(); return result
+    $('peer-password').value = ''; message(result.automatic?.state === 'recovering-engine' ? text('正在恢復遠端引擎，恢復後會自動連線。','Recovering the remote engine; the connection will resume automatically.') : text('正在連線，請在遠端視窗查看登入結果。','Connecting; authentication appears in the remote window.')); await refreshSettings(); return result
   } finally { connecting = false; for (const button of buttons) button.disabled = false }
 }
 $('connect-form').addEventListener('submit', event => { event.preventDefault(); void action(() => connectPeer()) })
@@ -140,9 +150,19 @@ $('temporary').addEventListener('click', () => void action(async () => { const r
 $('settings-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => {
   const settings = {}; for (const key of Object.keys(toggles)) settings[key] = $(key).checked
   for (const key of ['fps','quality']) settings[key] = Number($(key).value)
-  for (const key of ['codec','server','relayServer','serverKey','approval','verification','relativeMouseShortcut']) settings[key] = $(key).value.trim()
+  for (const key of ['connectionMode','codec','server','serverKey','approval','verification','relativeMouseShortcut']) settings[key] = $(key).value.trim()
   await request('remote.settings.update', { settings }); await refreshSettings(); message(text('設定已儲存；畫面設定套用至新連線。','Saved; display preferences apply to new connections.'))
 }) })
 $('password-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => { await request('remote.password.set', { password: $('host-password').value }); $('host-password').value = ''; message(text('固定密碼已更新。','Permanent password updated.')) }) })
 $('advanced').addEventListener('click', () => void action(() => request('remote.advanced.open')))
-void action(async () => { await refreshSettings(); await request('remote.start'); await refreshStatus(); await refreshAccess(); await refreshService(); setInterval(() => void action(refreshStatus), 5000) })
+setInterval(() => void action(refreshStatus), 2000)
+void action(refreshSettings)
+void action(async () => {
+  try { await request('remote.start') } catch (error) {
+    if (!['REMOTE_START_FAILED', 'REMOTE_NOT_RUNNING', 'REMOTE_START_CANCELLED'].includes(error.apiCode)) throw error
+    message(text('正在背景恢復遠端引擎，會自動重試。','Recovering the remote engine in the background; retrying automatically.'))
+    $('message').dataset.engineWait = '1'
+    return
+  }
+  await refreshStatus(); await refreshAccess(); await refreshService()
+})

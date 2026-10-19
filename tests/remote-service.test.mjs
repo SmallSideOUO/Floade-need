@@ -9,10 +9,12 @@ import { createLocalApi } from '../src/local-api.mjs'
 function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'floade-remote-'))
   t.after(() => fs.rmSync(directory, { recursive: true, force: true }))
+  fs.writeFileSync(path.join(directory, 'remote.json'), JSON.stringify({ settings: { connectionMode: 'manual' }, devices: [] }))
   const calls = []
   const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
     safeStorage: { isEncryptionAvailable: () => true, encryptString: () => Buffer.from('protected-fixture'), decryptString: () => 'fixture-secret' },
-    engineCall: async (method, params) => { calls.push({ method, params }); return method === 'status' ? { deviceId: '123456789' } : { windowId: 2, applied: true } } })
+    engineCall: async (method, params) => { calls.push({ method, params }); return method === 'status' ? { deviceId: '123456789', directOnly: true } : { windowId: 2, applied: true } } })
+  t.after(() => service.dispose())
   return { directory, calls, service }
 }
 test('remote API validates before mutation and manual settings persist through restart', async t => {
@@ -59,7 +61,7 @@ test('saving a device while engine settings are pending does not lose the device
   let startedApply
   const started = new Promise(resolve => { startedApply = resolve })
   const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
-    engineCall: async method => { if (method === 'apply') { startedApply(); await pendingApply } return {} } })
+    engineCall: async method => { if (method === 'apply') { startedApply(); await pendingApply } return { directOnly: true } } })
   const updating = service.dispatch('remote.settings.update', { settings: { quality: 80 } })
   await started
   const writer = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory })
@@ -87,11 +89,12 @@ test('relative mouse shortcut validates, reaches the engine and persists', async
 test('mobile P2P transport preferences persist and override a remembered peer relay preference', async t => {
   const { directory, calls, service } = fixture(t)
   await service.dispatch('remote.connect', { deviceId: '123456789', password: 'fixture-secret', remember: true })
-  await service.dispatch('remote.settings.update', { settings: { forceRelay: true } })
+  await assert.rejects(service.dispatch('remote.settings.update', { settings: { forceRelay: true } }), { apiCode: 'INVALID_PARAMS' })
+  await assert.rejects(service.dispatch('remote.settings.update', { settings: { relayServer: 'relay.example.com' } }), { apiCode: 'INVALID_PARAMS' })
   await service.dispatch('remote.settings.update', { settings: { forceRelay: false, tcpPunch: false, udpPunch: true, webrtc: true } })
   const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
     safeStorage: { isEncryptionAvailable: () => true, decryptString: () => 'fixture-secret' },
-    engineCall: async (method, params) => { calls.push({ method, params }); return {} } })
+    engineCall: async (method, params) => { calls.push({ method, params }); return { directOnly: true } } })
   await restarted.dispatch('remote.connect', { deviceId: '123456789' })
   const settings = calls.at(-1).params.settings
   assert.equal(calls.at(-1).params.password, 'fixture-secret')
@@ -102,6 +105,59 @@ test('mobile P2P transport preferences persist and override a remembered peer re
   assert.equal(settings.fps, 60)
   assert.equal(settings.gpu, true)
   assert.equal(settings.hardwareCodec, true)
+})
+
+test('legacy relay preferences cannot re-enable relay after loading saved settings', async t => {
+  const { directory, service, calls } = fixture(t)
+  fs.writeFileSync(path.join(directory, 'remote.json'), JSON.stringify({ settings: { connectionMode: 'manual', forceRelay: true, relayServer: 'relay.example.com' }, devices: [] }))
+  const saved = await service.dispatch('remote.settings.get')
+  assert.equal(saved.settings.forceRelay, false)
+  assert.equal(saved.settings.relayServer, '')
+  await service.dispatch('remote.connect', { deviceId: '123456789' })
+  assert.equal(calls.at(-1).params.settings.forceRelay, false)
+  assert.equal(calls.at(-1).params.settings.relayServer, '')
+})
+
+test('connections refuse an older running engine that could still fall back to relay', async t => {
+  const { directory } = fixture(t)
+  const calls = []
+  const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async method => { calls.push(method); return {} } })
+  await assert.rejects(service.dispatch('remote.connect', { deviceId: '123456789' }), { apiCode: 'REMOTE_ENGINE_UPDATE_REQUIRED' })
+  assert.deepEqual(calls, ['status'])
+})
+
+test('automatic mode uses native observations, persists a stable route and cancels through the API', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 })
+  const { directory } = fixture(t)
+  const calls = []
+  let windows = []
+  const service = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async (method, params) => {
+      calls.push({ method, params })
+      if (method === 'status') return { directOnly: true, autoConnectStatus: true, windows }
+      if (method === 'connect') { windows = [2]; return { windowId: 2 } }
+      if (method === 'sessionStatus') return { state: 'connected', direct: true, video: true }
+      if (method === 'disconnect') windows = []
+      return {}
+    } })
+  t.after(() => service.dispatch('remote.connection.cancel'))
+  await service.dispatch('remote.settings.update', { settings: { connectionMode: 'auto' } })
+  const result = await service.dispatch('remote.connect', { deviceId: '123456789', password: 'private-password' })
+  assert.equal(result.automatic.state, 'connecting')
+  await assert.rejects(service.dispatch('remote.settings.update', { settings: { quality: 80 } }), { apiCode: 'REMOTE_BUSY' })
+  for (let i = 0; i < 12; i++) { t.mock.timers.tick(1500); await new Promise(setImmediate) }
+  assert.equal((await service.dispatch('remote.status')).automatic.state, 'connected')
+  const stored = JSON.parse(fs.readFileSync(path.join(directory, 'remote.json'), 'utf8'))
+  assert.equal(stored.devices[0].connectionProfile, 'udp-webrtc')
+  assert.equal(JSON.stringify(stored).includes('private-password'), false)
+  await service.dispatch('remote.connection.cancel')
+  const count = calls.filter(c => c.method === 'connect').length
+  t.mock.timers.tick(90000)
+  await new Promise(setImmediate)
+  assert.equal(calls.filter(c => c.method === 'connect').length, count)
+  assert.deepEqual(windows, [])
+  assert.equal((await service.dispatch('remote.status')).automatic.state, 'cancelled')
 })
 test('favorites save offline, migrate remembered devices, update credentials and survive recent-history eviction', async t => {
   const { directory, service, calls } = fixture(t)
@@ -116,7 +172,7 @@ test('favorites save offline, migrate remembered devices, update credentials and
   assert.equal((await service.dispatch('remote.settings.get')).devices.length, 51)
   const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
     safeStorage: { isEncryptionAvailable: () => true, decryptString: () => 'fixture-secret' },
-    engineCall: async (method, params) => { calls.push({ method, params }); return {} } })
+    engineCall: async (method, params) => { calls.push({ method, params }); return { directOnly: true } } })
   await restarted.dispatch('remote.connect', { deviceId: '987654321', mode: 'files' })
   assert.equal(calls.at(-1).params.password, 'fixture-secret')
   assert.equal(calls.at(-1).params.mode, 'files')
@@ -171,7 +227,7 @@ test('full-access API grants, updates, revokes and disables the incoming allowli
     engineCall: async (method, params) => {
       if (method === 'accessGet') return structuredClone(policy)
       if (method === 'accessSet') { policy = structuredClone(params); return policy }
-      if (method === 'status' || method === 'apply') return {}
+      if (method === 'status' || method === 'apply') return { directOnly: true }
       throw new Error('Unexpected authentication mutation')
     } })
   await assert.rejects(service.dispatch('remote.access.grant', { deviceId: 'bad' }), { apiCode: 'INVALID_PARAMS' })

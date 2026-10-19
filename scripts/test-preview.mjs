@@ -22,13 +22,15 @@ const loginWrites = []
 const workMapRequests = []
 let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
 const remoteCalls = []
+let remoteAutomatic = null
+let remoteStartupFails = true
 globalThis.previewRemoteFactory = options => {
   const service = createRemoteService({ ...options,
-    engineCall: async (method, params) => { remoteCalls.push({ method, params }); return method === 'status' ? { deviceId: '123456789', windows: [1], connection: { status_num: 1 } }
+    engineCall: async (method, params) => { remoteCalls.push({ method, params }); return method === 'status' ? { deviceId: '123456789', directOnly: true, autoConnectStatus: true, windows: [1], automatic: remoteAutomatic, connection: { status_num: 1 } }
       : method === 'accessGet' ? { enabled: false, devices: [] } : {} },
     windowsService: { status: async () => ({ ready: false, installed: false }) } })
-  return { ...service, dispatch: (method, params) => method === 'remote.metrics'
-    ? Promise.resolve({ samples: [remoteSample] }) : service.dispatch(method, params) }
+  return { ...service, dispatch: (method, params) => method === 'remote.start' && remoteStartupFails ? Promise.reject(Object.assign(Error('Remote engine did not become ready in time.'), { apiCode: 'REMOTE_START_FAILED' })) : method === 'remote.metrics'
+    ? Promise.resolve({ samples: [remoteSample] }) : method === 'remote.status' ? service.dispatch(method, params).then(status => ({ ...status, automatic: remoteAutomatic })) : service.dispatch(method, params) }
 }
 globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
@@ -158,22 +160,27 @@ try {
   assert.equal(await runPanel('Boolean(document.querySelector("#communication"))'), false)
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
   results.push('AI communication UI and APIs remain removed; five quick actions including Remote load normally')
-  await apiCall('remote.settings.update', { settings: { forceRelay: true } })
+  assert.equal((await apiCall('remote.settings.update', { settings: { forceRelay: true } })).ok, false)
   await runPanel('document.querySelector("#remote").click()')
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('remote.html'))))
   const remoteWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('remote.html'))
   const runRemote = code => remoteWindow.webContents.executeJavaScript(code)
   await until(() => runRemote('document.querySelector("#relativeMouseShortcut").value === "Ctrl+Alt"'))
+  await until(() => runRemote('document.querySelector("#device-id").textContent === "123456789"'))
+  assert.equal(await runRemote('document.querySelector("#message").textContent.includes("已恢復")'), true)
+  remoteStartupFails = false
+  results.push('Remote startup failure does not stop status polling; recovery clears the stale error')
   await runRemote(`document.querySelector('[data-view="settings"]').click(); document.querySelector('#relativeMouseShortcut').dispatchEvent(new KeyboardEvent('keydown', {key:'m', code:'KeyM', ctrlKey:true, altKey:true, bubbles:true})); document.querySelector('#settings-form').requestSubmit()`)
   await until(async () => (await apiCall('remote.settings.get')).result.settings.relativeMouseShortcut === 'Ctrl+Alt+M')
   assert.equal(remoteCalls.filter(call => call.method === 'apply').at(-1).params.settings.relativeMouseShortcut, 'Ctrl+Alt+M')
   await runRemote(`document.querySelector('#reset-relative-shortcut').click(); document.querySelector('#settings-form').requestSubmit()`)
   await until(async () => (await apiCall('remote.settings.get')).result.settings.relativeMouseShortcut === 'Ctrl+Alt')
   await runRemote(`document.querySelector('[data-view="connect"]').click()`)
-  await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("強制中繼")'))
+  await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("僅限直連")'))
+  assert.equal(await runRemote('Boolean(document.querySelector("#forceRelay, #relayServer"))'), false)
   await runRemote('document.querySelector("#mobile-p2p").click()')
   await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("手機網路 P2P")'))
-  assert.deepEqual(await runRemote('["forceRelay","tcpPunch","udpPunch","webrtc"].map(id => document.getElementById(id).checked)'), [false, false, true, true])
+  assert.deepEqual(await runRemote('["tcpPunch","udpPunch","webrtc"].map(id => document.getElementById(id).checked)'), [false, true, true])
   const mobileSettings = (await apiCall('remote.settings.get')).result.settings
   assert.equal(mobileSettings.fps, 60)
   assert.equal(mobileSettings.gpu, true)
@@ -186,7 +193,9 @@ try {
   remoteSample = { ...remoteSample, fresh: false }
   await until(() => runRemote('document.querySelector("#connection-route").textContent.includes("等待畫面資料")'))
   await runRemote('document.querySelector("#automatic-direct").click()')
-  await until(async () => (await apiCall('remote.settings.get')).result.settings.tcpPunch === true)
+  await until(async () => (await apiCall('remote.settings.get')).result.settings.connectionMode === 'auto')
+  assert.equal(await runRemote('document.querySelector("#connectionMode").value'), 'auto')
+  await apiCall('remote.settings.update', { settings: { connectionMode: 'manual' } })
   assert.equal((await apiCall('remote.settings.get')).result.settings.forceRelay, false)
   await runRemote(`document.querySelector('#add-device').click(); document.querySelector('#peer-id').value = '987654321'; document.querySelector('#peer-alias').value = '家裡電腦'; document.querySelector('#peer-password').value = 'favorite-qa-secret'; document.querySelector('#save-device').click()`)
   await until(() => runRemote(`document.querySelector('#favorites').textContent.includes('家裡電腦')`))
@@ -213,6 +222,16 @@ try {
   await runRemote(`document.querySelector('#host-setup').click()`)
   assert.equal(await runRemote(`document.querySelector('#settings-view').hidden`), false)
   results.push('Favorite devices save without connecting, reuse protected passwords for desktop/files, edit without exposing passwords and link to host full-access setup')
+  remoteAutomatic = { state: 'connecting', profile: 'tcp', attempt: 3, total: 7 }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("3／7")'))
+  assert.equal(await runRemote('document.querySelector("#cancel-connection").hidden'), false)
+  remoteAutomatic = { ...remoteAutomatic, state: 'user-action' }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("密碼或權限")'))
+  remoteAutomatic = { ...remoteAutomatic, state: 'waiting', nextRetryAt: Date.now() + 60000 }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("自動重試")'))
+  remoteAutomatic = { ...remoteAutomatic, state: 'exhausted', attempt: 7 }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("均未成功")'))
+  results.push('Automatic switching mode, profile progress, stop control, authentication attention and exhaustion display correctly')
   remoteWindow.close()
   results.push('mobile P2P preset persists UDP/WebRTC without TCP or forced relay; actual route/FPS rejects stale samples and automatic direct restores TCP')
   results.push('relative mouse shortcut records Ctrl+Alt+M, saves to the engine and restores Ctrl+Alt')

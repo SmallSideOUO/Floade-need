@@ -1,5 +1,21 @@
 # Floade 0.1.22 regression surface
 
+## 0.1.33 virtualized saved-device recovery
+
+- Reproduce using a normal Windows launch: the real profile has no `remote.json`, while Codex's MSIX `LocalCache/Roaming/floade-local-data/remote.json` contains the favorite. A controller reload alone cannot bridge these filesystem views.
+- Recover only when the destination is absent. Validate candidate settings/device IDs, reprotect passwords when Chromium keys differ, atomically publish a flushed file without overwriting a concurrent save, and retire the original shadow into a backup. Do not overwrite the current Local State. Test authenticated decryption and rejection of tampered ciphertext.
+- Test credential reuse after migration, restart after forgetting a device, invalid/missing sources, existing-profile precedence, and package discovery. Verify the installed app from a normal Windows process, then restart and check the favorite and protected password again.
+
+## 0.1.30 direct P2P only
+
+- `src/remote-service.mjs`: normalize legacy relay preferences, reject new relay settings, and refuse a running engine without `directOnly=true` before applying settings or connecting.
+- `src/remote.html`, `src/remote.js`: remove force-relay and relay-server inputs and explain that failed direct connections stop without relaying.
+- Native `src/client.rs`: refuse both relay negotiation and relay socket creation before network I/O. Native `src/server.rs`: refuse incoming relay socket creation; ID-server signaling and WebRTC answers remain available even when a peer requests relay.
+- Native `libs/hbb_common/src/webrtc.rs`: for the FloadeRemote profile, refuse relay-only ICE, exclude TURN servers, and filter remote relay candidates from SDP and trickle. Other application profiles retain their existing behavior.
+- Native `flutter/lib/floade/control.dart`: report the branded engine's direct-only capability so the controller cannot silently reuse an old runtime. Build metadata pins the matching native and shared-library source revisions.
+
+Validation includes API rejection and legacy migration, refusal of an older engine, UI control removal, and native relay/TURN and candidate-filter regressions. Direct-only behavior does not establish an improvement in end-to-end input latency.
+
 ## 0.1.29 connection persistence and Windows relative input
 
 - `src/remote-service.mjs`: reread persisted state before dispatch and before mutation, merge saved preferences with the latest devices, and flush the temporary file before replacement. Necessary because a restored on-disk favorite was invisible to a running controller with stale state; subsequent writes could overwrite it.
@@ -86,3 +102,30 @@ The default Windows Floade shortcut Ctrl+Alt toggles relative mouse mode in both
 | Native `flutter/lib/models/relative_mouse_model.dart` | Handle the configured chord in Flutter input mode, reset held state on blur, and show the active shortcut in the relative mouse notification. |
 
 New shortcut modules keep parsing and press/release matching out of shared input code. Tests cover both modifier orders, held-key repeat, consumed releases, a custom key after its modifier prefix, extra modifiers, and switching while a game movement key is held. The Electron preview covers recording, saving, native settings dispatch and restoring Ctrl+Alt.
+
+
+## Automatic direct switching (0.1.31)
+
+- `src/remote-auto-connect.mjs`: bounded seven-profile search, native state polling, 15-second image stability check, per-device successful profile, explicit cancellation and password/permission stop.
+- `src/remote-service.mjs`: default auto/manual preference, automation lifecycle/status/API, success-profile persistence and capability check. Manual connections retain their original engine call. Automatic mode refuses existing native windows because transport options are global and window disconnect clears its tabs.
+- `src/remote.html`, `src/remote.js`: default automatic mode, progress and stop controls; manual route switches remain available.
+- Native `flutter/lib/floade/connection_status.dart`: feature-specific per-window state; no message content or credentials retained.
+- Native `models/model.dart`: thin hooks for listener start, connection events and first received image. Feature-off hooks are no-ops.
+- Native `floade/control.dart` and desktop remote/file tab pages: capability-protected per-window observation query, filtered to active tabs. No wire protocol, Rust transport, identity, authentication, capture, input or service-install changes.
+
+Regression checks cover full exhaustion, stable-route caching, later recovery, stale-session rejection, authentication stop, user close, cancellation and handshake timeout. Native analysis has existing deprecation/style notices only. An exhaustive search cannot make an offline host, unavailable ID server or a NAT with no direct route reachable.
+
+
+## Background engine and recovery (0.1.32)
+
+- `src/remote-service.mjs`: wraps startup in a single supervised operation, adds bounded probe deadlines, and cancels supervision for explicit shutdown/service installation/update. Failed launches clean up only their own child. This fixes overlapping/stalled startup and recovery after process loss.
+- New `src/remote-engine-supervisor.mjs`: background health check, bounded launch rounds and delayed retry, with explicit stop.
+- `src/main.mjs`: disposes the supervisor on app quit, preventing background relaunch during exit.
+- `src/remote-auto-connect.mjs`: preserves pending connection intent during engine loss, reopens it after recovery, and waits before repeating route sweeps or DNS failures. User closes and authentication prompts still cancel/stop automation.
+- `src/remote.js`: status polling survives initial startup failure, shows retry countdowns and clears stale startup errors after recovery.
+- Native `src/tray.rs`: Windows FloadeRemote-only early return suppresses the extra icon. `src/core_main.rs`: skips launching an unnecessary tray child for that profile. Other profiles retain the original path.
+- Native `flutter/lib/main.dart` and `common.dart`: the Floade frontend always starts its local control channel and remains background-managed, even when opened without the managed argument; prevents an existing unmanaged main window from blocking the controller's next launch.
+- Native `floade/control.dart`: retries failed channel initialization, atomically publishes the endpoint, bounds commands/window probes, and reports PID/background capability. This avoids partial endpoint reads, permanently absent control and a hung command blocking later readiness checks.
+- Native `floade/connection_status.dart`: categorizes DNS/unreachable-network failures for delayed retry rather than rapidly cycling all seven profiles.
+
+Validation: engine startup coalescing/retry, health recovery, stop cancellation, connection recovery with credential retention, delayed sweep/DNS retries and renderer startup-error recovery. Installed checks must additionally terminate only the current managed UI process and verify automatic replacement with the same device identity, current service/runtime hashes, no native tray process and a live outgoing P2P session where the network permits it. Wire protocol, passwords, incoming access policy, capture and input paths are unchanged.

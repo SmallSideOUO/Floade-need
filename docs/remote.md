@@ -1,5 +1,15 @@
 # Floade Remote
 
+## Saved devices after Windows startup (0.1.33)
+
+Windows can redirect AppData writes into an MSIX parent's private profile when Floade is launched from that parent. Normal startup then sees a different profile. If `remote.json` is missing, Floade recovers the newest valid saved-device profile from the same Windows user's Codex package cache. When Chromium profile keys differ, Windows DPAPI unlocks the old key in memory and the current protected storage re-encrypts each password. Plaintext passwords and keys are never saved or logged. Floade flushes and atomically creates the restored file, and retains the original shadow as a timestamped backup. An existing profile, including an intentionally empty device list, is never replaced. The current Local State, native engine identity and host keys are not replaced.
+
+## Direct P2P only (0.1.30)
+
+Floade no longer connects through RustDesk relay servers or WebRTC TURN. TCP, UDP and WebRTC direct connections remain available; a failed direct connection reports an error instead of relaying. This applies to outgoing desktop/file sessions and incoming sessions handled by the updated engine. Public ID-server discovery and NAT signaling are still used and may require account login. Direct-only transport does not guarantee low network delay or a connection through every NAT/firewall.
+
+The connection page removes force-relay and relay-server controls. The API rejects `forceRelay=true` and nonempty `relayServer`, and ignores those preferences in older saved state. Update the Windows service along with the bundled engine; the controller refuses to connect using an older running engine without the direct-only capability. Existing identity, passwords and favorites are preserved.
+
 The floating dot has a Remote action below Add folder. It opens the local device ID, password-based outgoing connection, recent devices and Windows-protected remembered credentials. Settings also opens the same remote settings panel. An independent native Flutter engine handles incoming connections, media and the remote toolbar; it starts hidden with Floade and retains the advanced native tools.
 
 The device code is generated separately on each device. Never copy FloadeRemote.toml, host key material, or encrypted remote.json between devices. Only the hardware codec cache may be reused from RustDesk on the same Windows installation. Floade stores its remote preferences separately from folders.json and Work Map data.
@@ -31,13 +41,17 @@ Examples (PowerShell helper installed beside Floade.exe):
 
 For passwords, construct ParamsJson in memory from a secure prompt; do not put secrets literally into shell history. Node clients use requestLocalApi({method, params}) over the existing local named pipe. The native frontend uses an ephemeral IPv4 loopback listener with a per-launch 256-bit capability stored only in the current user's profile. It rejects browser-origin requests and does not expose a LAN listener.
 
-GPU/display preferences apply to new sessions, including previously visited peers. Direct connectivity remains dependent on NAT/firewall/server conditions and falls back to relay. Requested FPS is a preference, not a guaranteed delivered rate.
+GPU/display preferences apply to new sessions, including previously visited peers. Direct connectivity remains dependent on NAT/firewall/server conditions; an unavailable direct route fails. Requested FPS is a preference, not a guaranteed delivered rate.
 
 ## Mobile hotspot P2P (0.1.26)
 
-Choose **Mobile network P2P** in the connection page, then reconnect. This saves `forceRelay=false`, `tcpPunch=false`, `udpPunch=true`, and `webrtc=true`, preserving picture, GPU and authentication preferences. It avoids the TCP punch route that connected successfully but repeatedly reset with Windows error 10054 on the tested mobile hotspot. **Automatic direct connection** re-enables TCP punching as well as UDP/WebRTC. Neither button starts a connection or changes an established session.
+From 0.1.31, **Automatic switching** is the default. It tries the last stable profile for the device first, then the remaining nonempty combinations of TCP, UDP and WebRTC (at most seven). Each handshake has a 45-second limit; explicit network failures advance sooner. A desktop route is remembered only after a direct authenticated session has received an image and stayed connected for 15 seconds. A later network failure starts another bounded sweep, excluding the failed route. From 0.1.32, a failed sweep waits 15, 30, then at most 60 seconds before retrying until cancelled. DNS/network-unavailable errors wait without consuming all profiles. There is no relay fallback. Password/permission prompts stop switching and stay open for the user. Closing the native tab or choosing **Stop / disconnect** cancels retries. An engine process loss preserves the pending connection and credentials in memory, restarts the engine, and resumes the requested session.
 
-The connection page displays the actual sampled P2P/relay route and per-display FPS while an outgoing window is active. A selected preference alone is not proof of a direct connection. The native engine retains relay fallback if direct routes cannot connect; the observed mobile hotspot session used direct WebRTC without relay. Public-server availability and other carrier NAT/firewall policies can differ.
+**Manual: mobile network P2P** selects `connectionMode=manual`, `tcpPunch=false`, `udpPunch=true`, `webrtc=true`. Other manual combinations remain available under Remote settings. Setting transport switches through the API without an explicit `connectionMode` selects manual mode for compatibility. Use `remote.settings.update` with `connectionMode=auto` to restore automation. Settings do not change an established session. Automatic mode owns one outgoing native window at a time because transport options are global and closing a native window closes its tabs; close existing sessions before starting it. Manual mode retains the existing multi-session behavior.
+
+`remote.status.automatic` reports the current profile, attempt, state and bounded recent attempt history without passwords. `remote.connection.cancel` stops automatic work and closes its active window. Upgrade the bundled engine and installed Windows service together: automatic switching requires the native `autoConnectStatus` capability.
+
+The connection page displays the actual sampled route and per-display FPS while an outgoing window is active. A selected preference alone is not proof of a direct connection. The observed mobile hotspot session used direct WebRTC without relay. From 0.1.30 the native engine blocks relay fallback. Public-server availability and other carrier NAT/firewall policies can differ.
 
 ## Native engine and installation
 
@@ -59,7 +73,7 @@ Build the engine from the pinned revision in vendor/remote/source.json using its
 
 Copy the resulting branded-windows-x64 folder to vendor/remote/windows-x64, then npm ci, npm run check, npm test, npm run test:preview and npm run dist:win -- --publish never. The runtime must contain its integrity manifest. Publish the exact engine source revision and runtime archive alongside the app installer, latest.yml and blockmap. See THIRD-PARTY-NOTICES.md and LICENSE for source and redistribution information.
 
-TCP, UDP and WebRTC direct-connection options are available in manual settings and remote.settings.update (tcpPunch, udpPunch, webrtc). Display/transport changes take effect on new connections. If an established direct connection resets, choose forceRelay or disable the failing punch route; an already established session is not silently migrated. Performance probes are not input-to-display measurements.
+TCP, UDP and WebRTC direct-connection options are available in manual settings and remote.settings.update (tcpPunch, udpPunch, webrtc). Display/transport changes take effect on new connections. Automatic mode switches after a network failure; in manual mode, change the failing punch route and reconnect. Performance probes are not input-to-display measurements.
 
 ## Full access and Windows service (0.1.24)
 
@@ -80,3 +94,12 @@ Run these on each receiving computer. The full-access allowlist allows only the 
 `remote.service.install` verifies every bundled runtime digest and invokes the native installer, copying the engine into protected `Program Files\FloadeRemote` and installing its independent automatic LocalSystem service. Close remote sessions first. Windows UAC consent is required and cannot be bypassed through the API. The existing RustDesk service is not changed. Native installation may restart the remote engine; use `remote.start` afterward.
 
 `remote.service.status.ready` requires a running automatic LocalSystem service, the expected protected executable path and matching executable/native-library/AOT hashes. Installation request success is not proof of readiness. This service supports privileged applications, secure desktop and login-screen capture/input according to native Windows capabilities; actual end-to-end secure-desktop operation must be tested separately. It does not grant the signed-in Windows account membership in Administrators or disclose Windows credentials. Update the system service after upgrading Floade if `binaryMatchesBundle=false`.
+
+
+## Background engine recovery (0.1.32)
+
+Floade keeps one app tray icon; the Windows FloadeRemote profile does not create its own tray icon. Its incoming system service and hidden managed UI continue to run. Advanced tools and actual desktop/file windows remain available through Floade.
+
+Engine starts share one promise, make at most three launch attempts per round, and use a real 15-second readiness deadline for each launch with short health probes. A background health check every five seconds restores a lost engine; a failed round waits 30 seconds before retrying. Only a process created by a failed startup attempt is terminated. The system service and existing native sessions are never killed as startup cleanup. Explicit remote.shutdown, application quit and update preparation stop supervision.
+
+Native Floade main windows always expose the capability control channel, including when a tray/installer opened the main window without the managed argument. Control-channel bind/publication failures retry within the existing process, endpoint files are atomically replaced, and native commands have a deadline. Remote UI status polling starts independently of engine initialization, and clears its startup message after recovery. remote.status.engine exposes starting/recovering/waiting/ready/blocked state without secrets. Installation/integrity errors still require fixing the installation; automatic recovery does not bypass Windows UAC.

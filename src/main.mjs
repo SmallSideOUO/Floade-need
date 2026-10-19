@@ -1119,6 +1119,7 @@ if (process.argv.includes('--work-map')) {
   })
 
   app.on('before-quit', () => {
+    remoteService?.dispose()
     appUpdates?.dispose()
     autoPull?.dispose()
     clearInterval(autoPushTimer)
