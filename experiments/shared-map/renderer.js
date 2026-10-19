@@ -60,6 +60,20 @@
     const edge = before ? boxOf(before) : boxOf(previous);
     return {beforeId:before?.id || null,x:before ? edge.x-20 : edge.x+edge.w+20,y:box.y,height:box.h};
   }
+  function nodeDrop(event, id) {
+    const node = by(id), targetId = linkTarget(event), target = by(targetId);
+    if (!node || targetId === id) return null;
+    if (target) {
+      const bounds = canvas.getBoundingClientRect(), x = (event.clientX-bounds.left-view.x)/view.z, box = boxOf(target);
+      const siblingEdge = node.parentId && node.parentId === target.parentId && (x < box.x+box.w*.22 || x > box.x+box.w*.78);
+      if (!siblingEdge) {
+        const invalid = id === graph.rootId || !window.mapHierarchy.canParent(graph.nodes,id,targetId);
+        return {kind:invalid?'invalid':'parent',target:targetId};
+      }
+    }
+    const reorder = siblingDrop(event,id);
+    return reorder ? {kind:'order',reorder} : null;
+  }
   function hideNotePreview() {
     clearTimeout(notePreviewTimer); notePreview.hidden = true;
     notePreview.querySelector('.note-preview-copy').textContent = '';
@@ -115,6 +129,7 @@
       const point = at(node), size = dims(node), button = document.createElement('button');
       button.type = 'button'; button.className = 'node'; button.dataset.id = node.id;
       for (const [key, value] of Object.entries({selected: node.id === selected, linking: gesture?.type === 'link' && gesture.node === node.id, linkTarget: ['link','node'].includes(gesture?.type) && gesture.target === node.id && gesture.node !== node.id, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
+      button.dataset.dropInvalid = String(gesture?.type === 'node' && gesture.drop?.kind === 'invalid' && gesture.target === node.id);
       button.setAttribute('aria-label', label(node));
       Object.assign(button.style, {left: point.x - size.w / 2 + 'px', top: point.y + 'px', width: size.w + 'px', height: size.h + 'px', color: node.textColor || '#eeeef1', opacity: String(node.opacity ?? 1)});
       const image = svg('svg', {viewBox: '0 0 100 100', preserveAspectRatio: 'none'}), shape = svg('path', {d: shapePath(node), class: 'node-shape'});
@@ -449,7 +464,7 @@
     else if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
     else if (gesture.type === 'panel') { const panel = panels.get(gesture.key); if (!panel) return; panel.x = gesture.x + dx / view.z; panel.y = gesture.y + dy / view.z; }
     else if (gesture.type === 'resize') { const node = by(gesture.node); node.width = Math.round(Math.max(70, Math.min(600, gesture.w + dx / view.z))); node.height = Math.round(Math.max(50, Math.min(500, gesture.h + dy / view.z))); if (node.shape === 'circle') node.width = node.height = Math.max(node.width, node.height); }
-    else if (graph.treeMode) { gesture.reorder = siblingDrop(event, gesture.node); gesture.target = null; }
+    else if (graph.treeMode) { gesture.drop = nodeDrop(event, gesture.node); gesture.reorder = gesture.drop?.reorder; gesture.target = gesture.drop?.target || null; }
     else { const node = by(gesture.node), panel = panels.get('node:' + node.id), nx = gesture.x + dx / view.z, ny = gesture.y + dy / view.z; if (panel) { panel.x += nx - node.x; panel.y += ny - node.y; } node.x = nx; node.y = ny; }
     if (graph.treeMode && gesture.type === 'resize') tree.arrange(graph);
     draw();
@@ -469,8 +484,12 @@
       draw(); save(); return;
     }
     if (graph.treeMode && previous.type === 'node' && previous.moved) {
-      const drop = siblingDrop(event, previous.node);
-      if (event.type === 'pointerup' && drop) changeTree(() => tree.reorder(graph, previous.node, drop.beforeId));
+      const drop = nodeDrop(event, previous.node);
+      if (event.type === 'pointerup') {
+        if (drop?.kind === 'parent') changeTree(() => tree.reparent(graph, previous.node, drop.target, crypto.randomUUID()));
+        if (drop?.kind === 'order') changeTree(() => tree.reorder(graph, previous.node, drop.reorder.beforeId));
+        if (drop?.kind === 'invalid') $('#save-status').textContent = previous.node === graph.rootId ? '根節點不能改上層' : '不能將自己或子孫設為上層';
+      }
       draw(); return;
     }
     if (previous.moved) save(); else if (previous.type === 'node' && event.type === 'pointerup') select(previous.node);

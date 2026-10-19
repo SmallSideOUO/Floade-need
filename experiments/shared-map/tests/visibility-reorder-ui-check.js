@@ -34,7 +34,7 @@ async page => {
   async function drag(before){
     const start=await node(moving).boundingBox(),end=await node(first).boundingBox();
     await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();
-    await page.mouse.move(before?end.x-12:end.x+end.width+50,end.y+end.height/2,{steps:10});
+    await page.mouse.move(before?end.x+2:end.x+end.width-2,end.y+end.height/2,{steps:10});
     check(await page.locator('.sibling-drop-marker').count()===1,'Insertion indicator missing');await page.mouse.up();await page.waitForTimeout(220);
   }
   await drag(true);let saved=await read();
@@ -46,7 +46,8 @@ async page => {
   await drag(false);saved=await read();check(saved.graph.nodes.find(n=>n.id===moving).x>saved.graph.nodes.find(n=>n.id===first).x,'Drag right did not reorder');
   const start=await node(moving).boundingBox(),target=await node('world').boundingBox(),before=await read();
   await page.mouse.move(start.x+start.width/2,start.y+start.height/2);await page.mouse.down();await page.mouse.move(target.x+target.width/2,target.y+target.height/2,{steps:10});await page.mouse.up();
-  check(JSON.stringify((await read()).graph)===JSON.stringify(before.graph),'Dragging to a different row changed hierarchy');
+  await page.waitForTimeout(220);
+  check((await read()).graph.nodes.find(n=>n.id===moving).parentId==='world','Dragging onto another node did not change parent');
   check(errors.length===0,'Renderer errors: '+errors.join('; '));
-  return {passed:true,checks:['AI and visual icons','direct icon toggle','global overrides','hidden object privacy','drag left and right','insertion indicator','subtree and edges retained','reload persistence','cross-level drag safe']};
+  return {passed:true,checks:['AI and visual icons','direct icon toggle','global overrides','hidden object privacy','drag left and right','insertion indicator','subtree and edges retained','reload persistence','drag onto node changes parent']};
 }
