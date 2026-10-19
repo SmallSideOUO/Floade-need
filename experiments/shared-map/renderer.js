@@ -127,17 +127,24 @@
       Object.assign(visibility.style,{left:point.x+size.w/2+5*view.z+'px',top:point.y+size.h-40*badgeScale+'px',transform:`scale(${badgeScale})`,transformOrigin:'top left',opacity:String(node.opacity??1)});
       const names = {full:'完整可見',text:'遮蔽文字',object:'隱藏物件'};
       for (const kind of ['ai','visual']) {
-        const configured = node[kind === 'ai' ? 'aiVisibility' : 'visualVisibility'] || 'full';
+        const field = kind === 'ai' ? 'aiVisibility' : 'visualVisibility', levels = ['full','text','object'];
+        const configured = node[field] || 'full', next = levels[(levels.indexOf(configured)+1)%levels.length];
         const effective = kind === 'ai' ? settings.aiMode === 'open' ? 'full' : configured : visual(node);
-        const badge = document.createElement('button'); badge.type = 'button'; badge.className = 'visibility-badge'; badge.dataset.kind = kind; badge.dataset.level = effective; badge.dataset.override = String(effective!==configured);
+        const badge = document.createElement('button'); badge.type = 'button'; badge.className = 'visibility-badge'; badge.dataset.kind = kind; badge.dataset.nodeId = node.id; badge.dataset.configured = configured; badge.dataset.level = effective; badge.dataset.override = String(effective!==configured);
         const description = (kind === 'ai' ? 'AI 可見：' : '畫面可見：') + names[effective] + (effective!==configured ? '（物件設定：'+names[configured]+'；目前由全域或暫時顯示覆蓋）' : '');
-        badge.title = description; badge.setAttribute('aria-label',description+'，點擊開啟物件設定');
+        const action = '點擊將此物件設定切換為'+names[next];
+        badge.title = description+'；'+action; badge.setAttribute('aria-label',description+'，'+action);
         const icon = svg('svg',{viewBox:'0 0 20 20','aria-hidden':'true'});
         icon.append(svg('path',{d:kind==='ai'?'M5 5h10v10H5z M7 1v4m6-4v4M7 15v4m6-4v4M1 7h4m-4 6h4m10-6h4m-4 6h4 M8 8h4v4H8z':'M1 10Q10-3 19 10Q10 23 1 10z M13 10a3 3 0 1 1-6 0a3 3 0 1 1 6 0',fill:'none',stroke:'currentColor','stroke-width':1.5}));
         if(effective==='object') icon.append(svg('path',{d:'M2 18L18 2',stroke:'currentColor','stroke-width':2}));
         if(effective==='text') icon.append(svg('path',{d:'M6 10h8',stroke:'currentColor','stroke-width':2}));
         badge.append(icon); badge.addEventListener('pointerdown',event=>{if(event.button===0)event.stopPropagation()});
-        badge.addEventListener('click',event=>{event.stopPropagation();dismissMenu();select(node.id)});visibility.append(badge);
+        badge.addEventListener('click',event=>{
+          event.stopPropagation(); if(apiBusy)return; dismissMenu();
+          node[field] = next; if(kind==='visual')revealed.delete(node.id);
+          draw(); save();
+          if(event.detail===0) [...layer.querySelectorAll('.visibility-badge')].find(button=>button.dataset.nodeId===node.id&&button.dataset.kind===kind)?.focus();
+        });visibility.append(badge);
       }
       layer.append(visibility);
       const note = attachment(node), endpoint = at(note.end), open = panels.has('note:' + node.id), masked = visual(node) !== 'full';
