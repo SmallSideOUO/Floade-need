@@ -1,5 +1,5 @@
 {
-  "name": "floade-work-map", "version": "0.1.0",
+  "name": "floade-work-map", "version": "0.1.1",
   "description": "Read and maintain Floade Work Map through its privacy-filtered local API.",
   "author": {"name": "SmallSideOUO"}, "license": "AGPL-3.0-only",
   "requires_local_executor": true, "skills": "./skills/", "mcpServers": "./.mcp.json",

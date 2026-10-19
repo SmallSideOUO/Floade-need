@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "floade-work-map",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read and maintain Floade Work Map through its privacy-filtered local API.",
   "author": {"name": "SmallSideOUO"},
   "license": "AGPL-3.0-only",

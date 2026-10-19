@@ -3,15 +3,15 @@ const {app,BrowserWindow,ipcMain,nativeTheme,safeStorage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
 const {aiMap}=require('./privacy.cjs'),{applyOrganization}=require('./organization.cjs'),{materialize}=require('./connections.cjs');
 const {ApiError,applyOperations,createApi}=require('./api.cjs');
-const {profilePath,migrateLegacy}=require('./profile.cjs');
+const {profilePath,legacyProfilePaths,migrateBestLegacy}=require('./profile.cjs');
 const tree=require('./tree.cjs');
 const profileArg=process.argv.find(a=>a.startsWith('--map-profile='));
 const hiddenTest=Boolean(profileArg&&process.argv.includes('--map-test-hidden'));
-const dataDir=profileArg?path.resolve(profileArg.slice(14)):profilePath(app.getPath('appData'));
+const dataDir=profileArg?path.resolve(profileArg.slice(14)):profilePath();
 const iconPath=path.join(__dirname,'..','..','assets',process.platform==='win32'?'tray.ico':'tray.png');
 // Chromium loads the safeStorage key from Local State during startup. Copy it
 // with the encrypted files before changing userData and before app readiness.
-if(!profileArg)migrateLegacy(path.join(__dirname,'data'),dataDir);
+if(!profileArg)migrateBestLegacy([...legacyProfilePaths({appData:app.getPath('appData')}),path.join(__dirname,'data')],dataDir);
 fs.mkdirSync(dataDir,{recursive:true});app.setPath('userData',path.join(dataDir,'profile'));app.setName('Floade Work Map');nativeTheme.themeSource='dark';
 let window,screenshotWindow,state,api,rendererReady=false;
 const pendingFlush=new Map(),auditDir=path.join(dataDir,'ai-history');

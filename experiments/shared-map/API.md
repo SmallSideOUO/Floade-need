@@ -1,6 +1,6 @@
 # 共用地圖 AI API
 
-啟動地圖視窗後，資料目錄的 `api-runtime.json` 提供本次啟動的 loopback endpoint 與 token。Windows 預設為 `%APPDATA%\Floade\work-map`，以下 `data/` 都指這個目錄；client 自動找到它。只監聽 `127.0.0.1`，每次啟動換 token，不接受瀏覽器 Origin。token 不要貼進對話或提交到 Git。Work Map 可從 Floade 面板開啟，仍使用獨立視窗與 API。
+啟動地圖視窗後，資料目錄的 `api-runtime.json` 提供本次啟動的 loopback endpoint 與 token。Windows 預設為 `%USERPROFILE%\.floade\work-map`，以下 `data/` 都指這個目錄；client 自動找到它。只監聽 `127.0.0.1`，每次啟動換 token，不接受瀏覽器 Origin。token 不要貼進對話或提交到 Git。Work Map 可從 Floade 面板開啟，仍使用獨立視窗與 API。
 
 推薦使用本機 client，不需要手動處理 token：
 

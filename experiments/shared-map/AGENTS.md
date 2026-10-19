@@ -1,6 +1,6 @@
 # 共用地圖：AI 讀取約定
 
-Windows 預設資料目錄為 `%APPDATA%\Floade\work-map`；以下 `data/` 指此目錄，自訂 `--map-profile` 時則指該目錄。開發版與 Floade 安裝版共用預設資料；專案內舊 `data/` 僅保留遷移備份，不是目前狀態。優先使用 client/API。
+Windows 預設資料目錄為 `%USERPROFILE%\.floade\work-map`；以下 `data/` 指此目錄，自訂 `--map-profile` 時則指該目錄。開發版與 Floade 安裝版共用預設資料；專案內舊 `data/` 僅保留遷移備份，不是目前狀態。優先使用 client/API。
 
 讀取使用者的地圖內容時，只使用 `data/ai-map.json`。這是程式依目前的 AI 隱私設定產生的完整可讀版本；視覺遮蔽是另一組獨立設定。
 
