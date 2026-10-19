@@ -10,6 +10,12 @@
   let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
   let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0, revision = 0, dirty = false, apiBusy = false;
   const panels = new Map(), revealed = new Set();
+  const panelResizeObserver = new ResizeObserver(entries => {
+    for (const {target} of entries) {
+      const panel = panels.get(target.dataset.kind + ':' + target.dataset.panelId);
+      if (panel?.element === target) positionPanel(panel);
+    }
+  });
   const by = id => graph.nodes.find(node => node.id === id);
   const edgeBy = id => graph.edges.find(edge => edge.id === id);
   const baseSize = node => ({w: node.width || (node.shape === 'circle' ? 140 : 210), h: node.height || (node.shape === 'circle' ? 140 : node.shape === 'diamond' ? 130 : 100)});
@@ -218,15 +224,17 @@
     view.x = x - (x - view.x) * zoom / old; view.y = y - (y - view.y) * zoom / old; view.z = zoom; draw();
   }
   function positionPanel(panel) {
+    const bounds = canvas.getBoundingClientRect(), width = panel.element.offsetWidth, height = panel.element.offsetHeight;
     let point = at(panel);
     if (panel.kind === 'note') {
       const node = by(panel.id); if (!node) return;
-      const anchor = at(attachment(node).end), bounds = canvas.getBoundingClientRect();
-      const width = panel.element.offsetWidth || 280, height = panel.element.offsetHeight || 230;
+      const anchor = at(attachment(node).end);
       let x = anchor.x + 16; if (x + width > bounds.width - 12) x = anchor.x - width - 16;
-      point = {x:Math.max(12,Math.min(bounds.width-width-12,x)),y:Math.max(12,Math.min(bounds.height-height-12,anchor.y-12))};
-      panel.x = (point.x-view.x)/view.z; panel.y = (point.y-view.y)/view.z;
+      point = {x,y:anchor.y-12};
     }
+    point.x = Math.max(12,Math.min(bounds.width-width-12,point.x));
+    point.y = Math.max(12,Math.min(bounds.height-height-12,point.y));
+    panel.x = (point.x-view.x)/view.z; panel.y = (point.y-view.y)/view.z;
     panel.element.style.left = point.x + 'px'; panel.element.style.top = point.y + 'px';
   }
   function raise(panel) { panel.element.style.zIndex = String(++panelOrder); }
@@ -235,19 +243,14 @@
     // Removing a focused field can synchronously dispatch blur/change events.
     // Retire the panel first so those events cannot try to remove it again.
     panels.delete(key);
+    panelResizeObserver.unobserve(panel.element);
     if (panel.kind === 'node' || panel.kind === 'note') revealed.delete(panel.id);
     panel.element.remove();
   }
   function openPanel(kind, id, restored) {
     const key = kind + ':' + id, existing = panels.get(key);
     if (existing) {
-      const rect = existing.element.getBoundingClientRect(), bounds = canvas.getBoundingClientRect();
-      if (rect.left < bounds.left + 12 || rect.right > bounds.right - 12 || rect.top < bounds.top + 12 || rect.top > bounds.bottom - 80) {
-        const point = at(kind !== 'edge' ? by(id) : by(edgeBy(id).from));
-        existing.x = (Math.max(12, Math.min(bounds.width - 316, point.x + 24)) - view.x) / view.z;
-        existing.y = (Math.max(12, Math.min(bounds.height - 220, point.y)) - view.y) / view.z;
-        positionPanel(existing);
-      }
+      positionPanel(existing);
       raise(existing); return existing;
     }
     const node = kind !== 'edge' ? by(id) : by(edgeBy(id)?.from);
@@ -267,6 +270,8 @@
     element.addEventListener('input', event => editPanel(panel, event));
     element.addEventListener('change', event => editPanel(panel, event));
     element.addEventListener('click', event => panelAction(panel, event));
+    element.addEventListener('toggle', () => positionPanel(panel), true);
+    panelResizeObserver.observe(element);
     element.querySelector('.panel-heading')?.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.target.closest('button')) return;
       event.preventDefault(); event.stopPropagation(); raise(panel);
@@ -285,11 +290,11 @@
     for (const [key, panel] of panels) {
       const node = panel.kind !== 'edge' ? by(panel.id) : null, edge = panel.kind === 'edge' ? edgeBy(panel.id) : null;
       if ((!node && !edge) || node && visual(node) === 'object' || edge && (visual(by(edge.from)) === 'object' || visual(by(edge.to)) === 'object')) { closePanel(key); continue; }
-      positionPanel(panel);
       if (panel.kind === 'note') {
         const masked = visual(node) !== 'full';
         setField(panel,'note',masked ? '[視覺遮蔽]' : node.note || '',masked);
         panel.element.querySelector('[data-action="reveal"]').hidden = !masked;
+        positionPanel(panel);
         continue;
       }
       if (edge) {
@@ -300,6 +305,7 @@
         setField(panel, 'edgeRouting', edge.routing || 'curve'); setField(panel, 'edgeCurvature', Math.round((edge.curvature ?? .38) * 100)); setField(panel, 'edgeOffset', edge.offset || 0);
         for (const name of ['edgeRouting','edgeCurvature','edgeOffset']) panel.element.querySelector(`[data-field="${name}"]`).closest('label').hidden = Boolean(graph.treeMode);
         for (const name of ['edge-auto','edge-delete']) panel.element.querySelector(`[data-action="${name}"]`).hidden = Boolean(graph.treeMode);
+        positionPanel(panel);
         continue;
       }
       const masked = visual(node) !== 'full', size = baseSize(node);
@@ -322,6 +328,7 @@
         const other = by(relation.from === node.id ? relation.to : relation.from); if (visual(other) === 'object') continue;
         const button = document.createElement('button'); button.textContent = label(other); button.type = 'button'; button.addEventListener('click', () => { openPanel('edge', relation.id); draw(); save(); }); related.append(button);
       }
+      positionPanel(panel);
     }
   }
   function editPanel(panel, event) {

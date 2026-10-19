@@ -54,8 +54,8 @@
   </template>
   <template id="note-panel-template">
     <div class="note-heading"><span>補充文字</span><button data-action="close" aria-label="關閉補充文字">×</button></div>
-    <textarea data-field="note" aria-label="補充文字" rows="7" maxlength="20000" placeholder="寫下補充文字，也可以留白…"></textarea>
-    <button data-action="reveal" hidden>暫時顯示這個物件的文字</button>
+    <div class="note-body"><textarea data-field="note" aria-label="補充文字" rows="7" maxlength="20000" placeholder="寫下補充文字，也可以留白…"></textarea>
+    <button data-action="reveal" hidden>暫時顯示這個物件的文字</button></div>
   </template>
   <template id="edge-panel-template">
     <div class="panel-heading"><strong data-heading></strong><button data-action="close" aria-label="關閉這個連線面板">×</button></div>
