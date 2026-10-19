@@ -25,19 +25,23 @@ node experiments/shared-map/client.cjs screenshot region.json result.png
   "actor": "Codex",
   "reason": "讓兩個分支的連線避開中間物件",
   "operations": [
-    {"op":"node.update","id":"node-id","patch":{"x":400,"y":500,"background":"#17171b"}},
-    {"op":"edge.update","id":"edge-id","patch":{"routing":"curve","fromPort":"bottom","toPort":"top","curvature":0.5,"offset":40,"color":"#64768d","width":1.5}}
+    {"op":"node.update","id":"node-id","patch":{"parentId":"parent-id","background":"#17171b"}},
+    {"op":"edge.update","id":"edge-id","patch":{"color":"#64768d","width":1.5}}
   ]
 }
 ```
 
-操作包含 `node.create/update/delete`、`edge.create/update/delete`。create 自帶 caller 指定的唯一 `id`；建立線須指定 `from` 和 `to`。每兩個物件只允許一條連線。所有幾何使用畫布世界座標：物件 `x` 是中心、`y` 是上緣；不是螢幕座標。刪物件會刪相關線，刪既有上層線會清除對應 parentId。
+Work Map 嚴格使用樹狀圖。`graph.treeMode` 為 true，`rootId` 是唯一根；隱私過濾可能遮蔽根或上層，因此可讀版本不一定包含完整的樹，不能把看不到的父層當成不存在。舊圖首次開啟會以加密紀錄記下 `tree.enable` 轉換前後的圖。
 
-物件欄位：`title`、`note`、`mark`、`x/y`、`width/height`、`shape`、`background`、`textColor`、`opacity`。位置範圍 ±100000，大小 70..600 / 50..500，不透明度 0..1，顏色 `#RRGGBB`。
+操作包含 `tree.enable`、`node.create/update/delete`、`edge.update`。每個操作自帶 caller 指定的 `id`；`tree.enable` 可使用 `strict-tree`。新增根只在空圖時允許；其他 `node.create` 的 `parentId` 指向可讀上層，省略時接到可讀根。父線自動建立，不要再建立第二條線；重新 GET 圖取得該線 id，才能編輯它的文字與外觀。
 
-線條欄位：`label`、`from/to`、`color`、`width`（0.5..12）、`lineStyle`（solid/dashed）、`routing`（curve/rounded）、`fromPort/toPort`（auto/top/right/bottom/left）、`curvature`（0..1）、`offset`（±1000）、`cornerRadius`（0..300）。
+改上層使用 `node.update` 的 `parentId`；改同層順序使用數字 `order`（小的在左）。循環、多父層、非根沒有上層等變更會整批拒絕。刪中間節點會把其子節點接到原上層，仍有子節點的根不可刪除；涉及不可讀物件的個別操作仍拒絕。所有結構變更及大小變更後會重新分層，`x/y` 由程式決定，不能靠座標打破樹狀排列。修改上層會清空原父線文字，避免把舊關係描述直接套到新上層。
 
-`controlPoints` 是兩個絕對座標 `{x,y}`，分別作為 cubic Bézier 的兩個控制點，可用來真正畫出任意弧度；建議同時固定兩端 port。`waypoints` 是最多 12 個途經點，以帶圓角的折線依序連接。設為 `null` 可清除。自訂路徑優先於自動避障；AI 需用截圖檢查效果。自動路由比較接點、路徑長度、物件碰撞和已有線路的接近程度，擁擠時可能仍交叉。
+物件欄位：`title`、`note`、`mark`、`parentId`、`order`、`x/y`、`width/height`、`shape`、`background`、`textColor`、`opacity`。`order` 範圍 ±100000，大小 70..600 / 50..500，不透明度 0..1，顏色 `#RRGGBB`。所有幾何都是世界座標，x 是中心、y 是上緣；寫入的 x/y 仍會由樹狀排列重算。
+
+樹狀線條可更新 `label`、`color`、`width`（0.5..12）、`lineStyle`（solid/dashed）。`from` 為上層、`to` 為子節點，修改 from 等同改該子的上層；不能改 to 或單獨刪除父線。線條固定從父節點底部、經同一個水平分支、接到子節點頂部。
+
+樹狀模式不接受 `routing`、`controlPoints`、`waypoints`、port、曲率或偏移等自由路徑修改。舊線上保留的路徑參數不參與樹狀繪製。關係文字保留在 API 與編輯面板，畫布及 API 截圖以清楚的上下結構呈現，不在分支線上鋪字。
 
 `GET /v1/history?limit=50&before=<record-id>` 回傳最新到最舊的紀錄與 `nextCursor`。每筆包含時間、操作者、原因、前後版本、狀態及受影響物件／線的 before/after 屬性。API 套用前先寫入加密紀錄，關閉後仍保存於 `data/ai-history/*.private`；啟動會恢復中斷狀態。紀錄不會因物件刪除而刪除，沒有清除 API。查詢紀錄同樣依目前隱私過濾；涉及被遮蔽內容的原因也遮蔽。請勿自行解密私人紀錄。
 

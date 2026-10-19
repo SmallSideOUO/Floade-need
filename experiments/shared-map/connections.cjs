@@ -58,7 +58,7 @@
     let result = `M ${points[0].x} ${points[0].y}`;
     for (let i = 1; i < points.length - 1; i++) {
       const a = points[i - 1], b = points[i], c = points[i + 1], ab = Math.hypot(b.x - a.x, b.y - a.y), bc = Math.hypot(c.x - b.x, c.y - b.y), radius = Math.min(cornerRadius, ab / 2, bc / 2);
-      if (!radius) continue;
+      if (!radius) { result += ` L ${b.x} ${b.y}`; continue; }
       const before = {x: b.x + (a.x - b.x) * radius / ab, y: b.y + (a.y - b.y) * radius / ab}, after = {x: b.x + (c.x - b.x) * radius / bc, y: b.y + (c.y - b.y) * radius / bc};
       result += ` L ${before.x} ${before.y} Q ${b.x} ${b.y} ${after.x} ${after.y}`;
     }
@@ -149,6 +149,17 @@
   }
   function routes(graph) {
     const boxes=graph.nodes.map(boxOf), lookup=new Map(boxes.map(box=>[box.id,box])), result=new Map();
+    if (graph.treeMode) {
+      for (const edge of graph.edges) {
+        const parent = lookup.get(edge.from), child = lookup.get(edge.to); if (!parent || !child) continue;
+        const siblings = graph.edges.filter(item => item.from === edge.from && lookup.has(item.to)).map(item => lookup.get(item.to));
+        const start = {x: parent.x + parent.w / 2, y: parent.y + parent.h}, end = {x: child.x + child.w / 2, y: child.y};
+        const junction = (start.y + Math.min(...siblings.map(box => box.y))) / 2;
+        const points = [start, {x: start.x, y: junction}, {x: end.x, y: junction}, end];
+        result.set(edge.id, {points, d: path(points, 0), fromPort: 'bottom', toPort: 'top', collisions: 0});
+      }
+      return result;
+    }
     for(const edge of graph.edges) if(lookup.has(edge.from)&&lookup.has(edge.to)) result.set(edge.id,route(lookup.get(edge.from),lookup.get(edge.to),boxes,edge,[...result.values()]));
     return result;
   }

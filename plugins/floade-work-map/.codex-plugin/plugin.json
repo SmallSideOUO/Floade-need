@@ -1,0 +1,12 @@
+{
+  "name": "floade-work-map", "version": "0.1.0",
+  "description": "Read and maintain Floade Work Map through its privacy-filtered local API.",
+  "author": {"name": "SmallSideOUO"}, "license": "AGPL-3.0-only",
+  "requires_local_executor": true, "skills": "./skills/", "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Floade Work Map", "shortDescription": "理解與維護你的思考地圖",
+    "longDescription": "Read the allowed map, maintain its strict hierarchy with audited changes, inspect history, and capture AI-filtered regions. Requires Floade Work Map running locally.",
+    "developerName": "SmallSideOUO", "category": "Productivity", "capabilities": ["Read", "Write"],
+    "defaultPrompt": "讀取我的 Floade Work Map，沿著目前的上層脈絡理解我在做的事。"
+  }
+}

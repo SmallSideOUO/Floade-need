@@ -1,0 +1,10 @@
+{
+  "name": "floade",
+  "interface": {"displayName": "Floade"},
+  "plugins": [{
+    "name": "floade-work-map",
+    "source": {"source": "local", "path": "./plugins/floade-work-map"},
+    "policy": {"installation": "AVAILABLE", "authentication": "ON_USE"},
+    "category": "Productivity"
+  }]
+}

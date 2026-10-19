@@ -3,7 +3,10 @@
   const $ = selector => document.querySelector(selector);
   const canvas = $('#canvas'), layer = $('#nodes'), lines = $('#lines'), panelLayer = $('#panels'), menu = $('#context-menu');
   const minimap = $('#minimap'); let miniProjection;
+  const notePreview = $('#note-preview'); let notePreviewTimer;
   const {ports, style, removeEdge, removeNode, shapePath, boxOf, routes} = window.mapConnections;
+  const tree = window.mapTree;
+  const {attachment} = window.mapNotes;
   let graph, view = {x: 0, y: 0, z: .6}, settings = {aiMode: 'protected', visualMode: 'selective'};
   let selected = null, gesture = null, menuPoint = null, saveTimer, ready = false, panelOrder = 0, revision = 0, dirty = false, apiBusy = false;
   const panels = new Map(), revealed = new Set();
@@ -15,6 +18,11 @@
   const visual = node => !node ? 'object' : settings.visualMode === 'show' || revealed.has(node.id) ? 'full' : settings.visualMode === 'mask' ? (node.visualVisibility === 'object' ? 'object' : 'text') : node.visualVisibility || 'full';
   const label = node => !node ? '未指定' : visual(node) === 'full' ? node.title || '未命名' : '••••••';
   const payload = () => ({graph, view, settings, revision, panels: [...panels.values()].map(({kind, id, x, y}) => ({kind, id, x, y}))});
+  function changeTree(action) {
+    const before = structuredClone(graph);
+    try { action(); tree.arrange(graph); draw(); save(); return true; }
+    catch (error) { graph = before; draw(); $('#save-status').textContent = error.message; return false; }
+  }
   function commit() {
     clearTimeout(saveTimer); if (!dirty) return;
     const result = window.mapStore.saveNow(payload()); if (result.error) throw new Error(result.error);
@@ -36,11 +44,45 @@
   }
   let routeKey = '', routeCache = new Map();
   function linkTarget(event) { const node = document.elementFromPoint(event.clientX, event.clientY)?.closest('.node'); return node?.dataset.id || null; }
+  function siblingDrop(event, id) {
+    const node = by(id); if (!node?.parentId) return null;
+    const bounds = canvas.getBoundingClientRect(), point = {x:(event.clientX-bounds.left-view.x)/view.z,y:(event.clientY-bounds.top-view.y)/view.z};
+    const box = boxOf(node); if (point.y < box.y-50 || point.y > box.y+box.h+50) return null;
+    const siblings = graph.nodes.filter(other => other.id !== id && other.parentId === node.parentId && visual(other) !== 'object').sort((a,b) => a.x-b.x);
+    if (!siblings.length) return null;
+    const before = siblings.find(other => point.x < other.x), previous = before ? siblings[siblings.indexOf(before)-1] : siblings.at(-1);
+    const edge = before ? boxOf(before) : boxOf(previous);
+    return {beforeId:before?.id || null,x:before ? edge.x-20 : edge.x+edge.w+20,y:box.y,height:box.h};
+  }
+  function hideNotePreview() {
+    clearTimeout(notePreviewTimer); notePreview.hidden = true;
+    notePreview.querySelector('.note-preview-copy').textContent = '';
+    layer.querySelector('[aria-describedby="note-preview"]')?.removeAttribute('aria-describedby');
+  }
+  function deferHideNotePreview() { clearTimeout(notePreviewTimer); notePreviewTimer = setTimeout(hideNotePreview, 140); }
+  function previewNote(id, orb) {
+    hideNotePreview();
+    notePreviewTimer = setTimeout(() => {
+      const node = by(id);
+      if (apiBusy || gesture || !menu.hidden || !orb.isConnected || !node || visual(node) !== 'full' || !node.note || panels.has('note:' + id)) return;
+      notePreview.querySelector('.note-preview-copy').textContent = node.note;
+      notePreview.hidden = false; orb.setAttribute('aria-describedby', 'note-preview');
+      const bounds = canvas.getBoundingClientRect(), anchor = orb.getBoundingClientRect();
+      const width = notePreview.offsetWidth, height = notePreview.offsetHeight;
+      let x = anchor.right - bounds.left + 12;
+      if (x + width > bounds.width - 12) x = anchor.left - bounds.left - width - 12;
+      notePreview.style.left = Math.max(12, Math.min(bounds.width - width - 12, x)) + 'px';
+      notePreview.style.top = Math.max(12, Math.min(bounds.height - height - 12, anchor.top - bounds.top - 8)) + 'px';
+    }, 220);
+  }
+  notePreview.addEventListener('pointerenter', () => clearTimeout(notePreviewTimer));
+  notePreview.addEventListener('pointerleave', deferHideNotePreview);
   function draw() {
+    hideNotePreview();
     const bounds = canvas.getBoundingClientRect(), boxes = graph.nodes.filter(node => visual(node) !== 'object').map(boxOf);
-    const key = JSON.stringify([boxes, graph.edges.map(({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}) => ({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}))]);
+    const key = JSON.stringify([graph.treeMode, boxes, graph.edges.map(({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}) => ({id,from,to,routing,fromPort,toPort,curvature,offset,cornerRadius,controlPoints,waypoints}))]);
     if (key !== routeKey) {
-      routeKey = key; routeCache = routes({nodes: graph.nodes.filter(node => visual(node) !== 'object'), edges: graph.edges});
+      routeKey = key; routeCache = routes({...graph, nodes: graph.nodes.filter(node => visual(node) !== 'object')});
     }
     lines.setAttribute('viewBox', `0 0 ${bounds.width} ${bounds.height}`); lines.replaceChildren(); layer.replaceChildren();
     const drawing = svg('g', {transform: `translate(${view.x} ${view.y}) scale(${view.z})`}); lines.append(drawing);
@@ -53,7 +95,7 @@
       const hit = svg('path', {d: result.d, fill: 'none', stroke: 'transparent', 'stroke-width': Math.max(14, appearance.width + 10), 'vector-effect': 'non-scaling-stroke', class: 'connection-hit', 'data-edge-id': edge.id, role: 'button', tabindex: 0, 'aria-label': '編輯連線：' + label(a) + ' ↔ ' + label(b)});
       hit.addEventListener('click', event => { if (event.detail === 0 && !gesture) { openPanel('edge', edge.id); draw(); save(); } });
       hit.addEventListener('keydown', event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openPanel('edge', edge.id); draw(); save(); } }); drawing.append(hit);
-      if (edge.label && view.z >= .65 && visual(a) === 'full' && visual(b) === 'full') {
+      if (edge.label && !graph.treeMode && view.z >= .65 && visual(a) === 'full' && visual(b) === 'full') {
         const middle = result.points[Math.floor(result.points.length / 2)], text = svg('text', {x: middle.x, y: middle.y - 9 / view.z, fill: '#9999a5', 'font-size': 11 / view.z, 'text-anchor': 'middle'}); text.textContent = edge.label; drawing.append(text);
       }
     }
@@ -66,18 +108,55 @@
       if (visual(node) === 'object') continue;
       const point = at(node), size = dims(node), button = document.createElement('button');
       button.type = 'button'; button.className = 'node'; button.dataset.id = node.id;
-      for (const [key, value] of Object.entries({selected: node.id === selected, linking: gesture?.type === 'link' && gesture.node === node.id, linkTarget: gesture?.type === 'link' && gesture.target === node.id && gesture.node !== node.id, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
+      for (const [key, value] of Object.entries({selected: node.id === selected, linking: gesture?.type === 'link' && gesture.node === node.id, linkTarget: ['link','node'].includes(gesture?.type) && gesture.target === node.id && gesture.node !== node.id, masked: visual(node) !== 'full'})) button.dataset[key] = String(value);
       button.setAttribute('aria-label', label(node));
       Object.assign(button.style, {left: point.x - size.w / 2 + 'px', top: point.y + 'px', width: size.w + 'px', height: size.h + 'px', color: node.textColor || '#eeeef1', opacity: String(node.opacity ?? 1)});
       const image = svg('svg', {viewBox: '0 0 100 100', preserveAspectRatio: 'none'}), shape = svg('path', {d: shapePath(node), class: 'node-shape'});
       shape.style.fill = node.background || '#17171b'; image.append(shape); button.append(image);
       const copy = document.createElement('span'), title = document.createElement('strong'); copy.className = 'node-copy'; copy.style.fontSize = Math.max(9, Math.min(15, 13 * view.z)) + 'px'; title.textContent = label(node); copy.append(title);
       if (view.z >= .65 && visual(node) === 'full' && node.mark) { const mark = document.createElement('small'); mark.textContent = node.mark; copy.append(mark); }
-      button.append(copy); button.addEventListener('click', event => { if (event.detail === 0) select(node.id); }); layer.append(button);
-      for (const side of ['top', 'right', 'bottom', 'left']) { const port = document.createElement('span'); port.className = 'connection-port'; port.dataset.port = side; port.setAttribute('aria-hidden', 'true'); button.append(port); }
+      button.append(copy); button.dataset.dragging = String(gesture?.type === 'node' && gesture.node === node.id && gesture.moved); button.addEventListener('click', event => { if (event.detail === 0) select(node.id); }); layer.append(button);
+      const visibility = document.createElement('div'); visibility.className = 'node-visibility'; visibility.dataset.nodeId = node.id;
+      const badgeScale = Math.max(.35, Math.min(1, view.z));
+      Object.assign(visibility.style,{left:point.x+size.w/2+5*view.z+'px',top:point.y+size.h-40*badgeScale+'px',transform:`scale(${badgeScale})`,transformOrigin:'top left',opacity:String(node.opacity??1)});
+      const names = {full:'完整可見',text:'遮蔽文字',object:'隱藏物件'};
+      for (const kind of ['ai','visual']) {
+        const configured = node[kind === 'ai' ? 'aiVisibility' : 'visualVisibility'] || 'full';
+        const effective = kind === 'ai' ? settings.aiMode === 'open' ? 'full' : configured : visual(node);
+        const badge = document.createElement('button'); badge.type = 'button'; badge.className = 'visibility-badge'; badge.dataset.kind = kind; badge.dataset.level = effective; badge.dataset.override = String(effective!==configured);
+        const description = (kind === 'ai' ? 'AI 可見：' : '畫面可見：') + names[effective] + (effective!==configured ? '（物件設定：'+names[configured]+'；目前由全域或暫時顯示覆蓋）' : '');
+        badge.title = description; badge.setAttribute('aria-label',description+'，點擊開啟物件設定');
+        const icon = svg('svg',{viewBox:'0 0 20 20','aria-hidden':'true'});
+        icon.append(svg('path',{d:kind==='ai'?'M5 5h10v10H5z M7 1v4m6-4v4M7 15v4m6-4v4M1 7h4m-4 6h4m10-6h4m-4 6h4 M8 8h4v4H8z':'M1 10Q10-3 19 10Q10 23 1 10z M13 10a3 3 0 1 1-6 0a3 3 0 1 1 6 0',fill:'none',stroke:'currentColor','stroke-width':1.5}));
+        if(effective==='object') icon.append(svg('path',{d:'M2 18L18 2',stroke:'currentColor','stroke-width':2}));
+        if(effective==='text') icon.append(svg('path',{d:'M6 10h8',stroke:'currentColor','stroke-width':2}));
+        badge.append(icon); badge.addEventListener('pointerdown',event=>{if(event.button===0)event.stopPropagation()});
+        badge.addEventListener('click',event=>{event.stopPropagation();dismissMenu();select(node.id)});visibility.append(badge);
+      }
+      layer.append(visibility);
+      const note = attachment(node), endpoint = at(note.end), open = panels.has('note:' + node.id), masked = visual(node) !== 'full';
+      const tether = svg('path', {d:note.d,fill:'none',stroke:'#72728b','stroke-width':1.2,'vector-effect':'non-scaling-stroke',class:'note-tether','data-node-id':node.id});
+      tether.style.opacity = String(node.opacity ?? 1); drawing.append(tether);
+      const orb = document.createElement('button'), diameter = Math.max(14,note.radius * 2 * view.z);
+      orb.type = 'button'; orb.className = 'note-orb'; orb.dataset.nodeId = node.id; orb.dataset.open = String(open); orb.dataset.hasNote = String(!masked && Boolean(node.note));
+      orb.textContent = masked ? '•' : node.note ? '…' : '+';
+      orb.setAttribute('aria-label','補充文字：' + label(node)); orb.setAttribute('aria-expanded',String(open));
+      Object.assign(orb.style,{left:endpoint.x-diameter/2+'px',top:endpoint.y-diameter/2+'px',width:diameter+'px',height:diameter+'px',fontSize:Math.max(10,diameter*.7)+'px',opacity:String(node.opacity ?? 1)});
+      orb.addEventListener('pointerenter',()=>previewNote(node.id,orb));
+      orb.addEventListener('pointerleave',deferHideNotePreview);
+      orb.addEventListener('focus',()=>previewNote(node.id,orb));
+      orb.addEventListener('blur',hideNotePreview);
+      orb.addEventListener('pointerdown',event=>{hideNotePreview();if(event.button===0)event.stopPropagation()});
+      orb.addEventListener('click',event=>{event.stopPropagation();dismissMenu();if(panels.has('note:'+node.id))closePanel('note:'+node.id);else openPanel('note',node.id);draw();save();panels.get('note:'+node.id)?.element.querySelector('textarea:not(:disabled)')?.focus()});
+      layer.append(orb);
+      for (const side of (graph.treeMode ? node.id === graph.rootId ? ['bottom'] : ['top','bottom'] : ['top','right','bottom','left'])) { const port = document.createElement('span'); port.className = 'connection-port'; port.dataset.port = side; port.setAttribute('aria-hidden', 'true'); port.title = side === 'bottom' ? '拖到另一節點，將它設為子節點' : '拖到另一節點，將它設為上層'; button.append(port); }
       if (node.id === selected) {
         const handle = document.createElement('button'); handle.className = 'resize-handle'; handle.dataset.resize = node.id; handle.type = 'button'; handle.setAttribute('aria-label', '拖曳調整物件大小'); handle.style.left = point.x + size.w / 2 - 5 + 'px'; handle.style.top = point.y + size.h - 5 + 'px'; layer.append(handle);
       }
+    }
+    if (gesture?.type === 'node' && gesture.moved && gesture.reorder) {
+      const drop = gesture.reorder, point = at(drop), marker = document.createElement('div'); marker.className = 'sibling-drop-marker';
+      Object.assign(marker.style,{left:point.x+'px',top:point.y-8+'px',height:drop.height*view.z+16+'px'}); layer.append(marker);
     }
     $('#scale').textContent = Math.round(view.z * 100) + '%'; syncPanels(); drawMinimap(bounds);
   }
@@ -138,14 +217,25 @@
     const old = view.z, zoom = Math.max(.15, Math.min(2, old * factor));
     view.x = x - (x - view.x) * zoom / old; view.y = y - (y - view.y) * zoom / old; view.z = zoom; draw();
   }
-  function positionPanel(panel) { const point = at(panel); panel.element.style.left = point.x + 'px'; panel.element.style.top = point.y + 'px'; }
+  function positionPanel(panel) {
+    let point = at(panel);
+    if (panel.kind === 'note') {
+      const node = by(panel.id); if (!node) return;
+      const anchor = at(attachment(node).end), bounds = canvas.getBoundingClientRect();
+      const width = panel.element.offsetWidth || 280, height = panel.element.offsetHeight || 230;
+      let x = anchor.x + 16; if (x + width > bounds.width - 12) x = anchor.x - width - 16;
+      point = {x:Math.max(12,Math.min(bounds.width-width-12,x)),y:Math.max(12,Math.min(bounds.height-height-12,anchor.y-12))};
+      panel.x = (point.x-view.x)/view.z; panel.y = (point.y-view.y)/view.z;
+    }
+    panel.element.style.left = point.x + 'px'; panel.element.style.top = point.y + 'px';
+  }
   function raise(panel) { panel.element.style.zIndex = String(++panelOrder); }
   function closePanel(key) {
     const panel = panels.get(key); if (!panel) return;
     // Removing a focused field can synchronously dispatch blur/change events.
     // Retire the panel first so those events cannot try to remove it again.
     panels.delete(key);
-    if (panel.kind === 'node') revealed.delete(panel.id);
+    if (panel.kind === 'node' || panel.kind === 'note') revealed.delete(panel.id);
     panel.element.remove();
   }
   function openPanel(kind, id, restored) {
@@ -153,20 +243,21 @@
     if (existing) {
       const rect = existing.element.getBoundingClientRect(), bounds = canvas.getBoundingClientRect();
       if (rect.left < bounds.left + 12 || rect.right > bounds.right - 12 || rect.top < bounds.top + 12 || rect.top > bounds.bottom - 80) {
-        const point = at(kind === 'node' ? by(id) : by(edgeBy(id).from));
+        const point = at(kind !== 'edge' ? by(id) : by(edgeBy(id).from));
         existing.x = (Math.max(12, Math.min(bounds.width - 316, point.x + 24)) - view.x) / view.z;
         existing.y = (Math.max(12, Math.min(bounds.height - 220, point.y)) - view.y) / view.z;
         positionPanel(existing);
       }
       raise(existing); return existing;
     }
-    const node = kind === 'node' ? by(id) : by(edgeBy(id)?.from);
+    const node = kind !== 'edge' ? by(id) : by(edgeBy(id)?.from);
     if (!node || visual(node) === 'object') return null;
     if (kind === 'edge' && visual(by(edgeBy(id)?.to)) === 'object') return null;
-    const element = document.createElement('section'); element.className = 'object-panel'; element.dataset.panelId = id; element.dataset.kind = kind; element.setAttribute('aria-label', kind === 'node' ? '物件編輯面板' : '連線編輯面板');
+    const element = document.createElement('section'); element.className = kind === 'note' ? 'object-panel note-popover' : 'object-panel'; element.dataset.panelId = id; element.dataset.kind = kind; element.setAttribute('aria-label', kind === 'note' ? '補充文字' : kind === 'node' ? '物件編輯面板' : '連線編輯面板');
     element.append($('#' + kind + '-panel-template').content.cloneNode(true));
     const bounds = canvas.getBoundingClientRect(), point = at(node), size = dims(node);
     let x = point.x + size.w / 2 + 14, y = point.y;
+    if (kind === 'node') { const left = point.x-size.w/2-318; x = left >= 12 ? left : point.x+size.w/2+34*view.z+18; }
     if (x + 304 > bounds.width - 12) x = point.x - size.w / 2 - 318;
     x = Math.max(12, Math.min(bounds.width - 316, x)); y = Math.max(12, Math.min(bounds.height - 220, y));
     for (const other of panels.values()) { const spot = at(other); if (Math.abs(spot.x - x) < 24 && Math.abs(spot.y - y) < 24) { x = Math.max(12, Math.min(bounds.width - 316, x + 36)); y += 36; } }
@@ -176,7 +267,7 @@
     element.addEventListener('input', event => editPanel(panel, event));
     element.addEventListener('change', event => editPanel(panel, event));
     element.addEventListener('click', event => panelAction(panel, event));
-    element.querySelector('.panel-heading').addEventListener('pointerdown', event => {
+    element.querySelector('.panel-heading')?.addEventListener('pointerdown', event => {
       if (event.button !== 0 || event.target.closest('button')) return;
       event.preventDefault(); event.stopPropagation(); raise(panel);
       gesture = {id: event.pointerId, type: 'panel', key, sx: event.clientX, sy: event.clientY, x: panel.x, y: panel.y, moved: false};
@@ -192,19 +283,37 @@
   }
   function syncPanels() {
     for (const [key, panel] of panels) {
-      const node = panel.kind === 'node' ? by(panel.id) : null, edge = panel.kind === 'edge' ? edgeBy(panel.id) : null;
+      const node = panel.kind !== 'edge' ? by(panel.id) : null, edge = panel.kind === 'edge' ? edgeBy(panel.id) : null;
       if ((!node && !edge) || node && visual(node) === 'object' || edge && (visual(by(edge.from)) === 'object' || visual(by(edge.to)) === 'object')) { closePanel(key); continue; }
       positionPanel(panel);
+      if (panel.kind === 'note') {
+        const masked = visual(node) !== 'full';
+        setField(panel,'note',masked ? '[視覺遮蔽]' : node.note || '',masked);
+        panel.element.querySelector('[data-action="reveal"]').hidden = !masked;
+        continue;
+      }
       if (edge) {
         const a = by(edge.from), b = by(edge.to), masked = visual(a) !== 'full' || visual(b) !== 'full';
         panel.element.querySelector('[data-heading]').textContent = label(a) + ' ↔ ' + label(b);
         setField(panel, 'edgeLabel', masked ? '[視覺遮蔽]' : edge.label || '', masked);
         const appearance = style(edge); setField(panel, 'edgeColor', appearance.color); setField(panel, 'edgeWidth', appearance.width); setField(panel, 'edgeStyle', appearance.lineStyle);
-        setField(panel, 'edgeRouting', edge.routing || 'curve'); setField(panel, 'edgeCurvature', Math.round((edge.curvature ?? .38) * 100)); setField(panel, 'edgeOffset', edge.offset || 0); continue;
+        setField(panel, 'edgeRouting', edge.routing || 'curve'); setField(panel, 'edgeCurvature', Math.round((edge.curvature ?? .38) * 100)); setField(panel, 'edgeOffset', edge.offset || 0);
+        for (const name of ['edgeRouting','edgeCurvature','edgeOffset']) panel.element.querySelector(`[data-field="${name}"]`).closest('label').hidden = Boolean(graph.treeMode);
+        for (const name of ['edge-auto','edge-delete']) panel.element.querySelector(`[data-action="${name}"]`).hidden = Boolean(graph.treeMode);
+        continue;
       }
       const masked = visual(node) !== 'full', size = baseSize(node);
       panel.element.querySelector('[data-heading]').textContent = label(node);
-      setField(panel, 'title', masked ? '[視覺遮蔽]' : node.title || '', masked); setField(panel, 'note', masked ? '[視覺遮蔽]' : node.note || '', masked);
+      setField(panel, 'title', masked ? '[視覺遮蔽]' : node.title || '', masked);
+      panel.element.querySelector('[data-tree-parent]').hidden = !graph.treeMode;
+      panel.element.querySelector('[data-tree-order]').hidden = !graph.treeMode;
+      if (graph.treeMode) {
+        const select = panel.element.querySelector('[data-field="parentId"]'); select.replaceChildren();
+        const choices = node.id === graph.rootId ? [{id:'', title:'根節點'}] : graph.nodes.filter(other => visual(other) !== 'object' && window.mapHierarchy.canParent(graph.nodes, node.id, other.id));
+        for (const other of choices) { const option = document.createElement('option'); option.value = other.id; option.textContent = other.id ? label(other) : other.title; select.append(option); }
+        select.value = node.parentId || ''; select.disabled = masked || node.id === graph.rootId;
+        for (const button of panel.element.querySelectorAll('[data-tree-order] button')) button.disabled = node.id === graph.rootId;
+      }
       panel.element.querySelector('[data-action="reveal"]').hidden = !masked;
       for (const [name, value] of Object.entries({shape: node.shape, background: node.background || '#17171b', textColor: node.textColor || '#eeeef1', width: Math.round(size.w), height: Math.round(size.h), opacity: Math.round((node.opacity ?? 1) * 100), aiVisibility: node.aiVisibility || 'full', visualVisibility: node.visualVisibility || 'full'})) setField(panel, name, value);
       panel.element.querySelector('[data-opacity]').textContent = Math.round((node.opacity ?? 1) * 100) + '%';
@@ -233,18 +342,29 @@
       draw(); save(); return;
     }
     const node = by(panel.id); if (!node) return;
+    if (graph.treeMode && name === 'parentId') { changeTree(() => tree.reparent(graph, node.id, field.value, crypto.randomUUID())); return; }
     if (name === 'width' || name === 'height') { const value = Number(field.value); if (!Number.isFinite(value)) return; node[name] = Math.round(Math.max(name === 'width' ? 70 : 50, Math.min(name === 'width' ? 600 : 500, value))); if (node.shape === 'circle') node.width = node.height = node[name]; }
     else if (name === 'opacity') node.opacity = Number(field.value) / 100;
     else if (name === 'shape') { node.shape = field.value; delete node.width; delete node.height; }
     else { node[name] = field.value; if (name === 'visualVisibility') revealed.delete(node.id); }
+    if (graph.treeMode) tree.arrange(graph);
     draw(); save();
   }
   function panelAction(panel, event) {
     const action = event.target.closest('[data-action]')?.dataset.action; if (!action) return;
     if (action === 'close') closePanel(panel.kind + ':' + panel.id);
-    const node = panel.kind === 'node' ? by(panel.id) : null;
+    const node = panel.kind !== 'edge' ? by(panel.id) : null;
     if (action === 'reveal' && node) revealed.add(node.id);
-    if (action === 'delete' && node) deleteNode(node.id);
+    if (graph.treeMode && node && ['earlier','later'].includes(action)) {
+      changeTree(() => {
+        const siblings = graph.nodes.filter(other => other.parentId === node.parentId).sort((a,b) => (a.order ?? graph.nodes.indexOf(a)) - (b.order ?? graph.nodes.indexOf(b)));
+        const index = siblings.indexOf(node), target = index + (action === 'earlier' ? -1 : 1);
+        if (target < 0 || target >= siblings.length) return;
+        [siblings[index], siblings[target]] = [siblings[target], siblings[index]];
+        siblings.forEach((item,i) => { item.order = i; });
+      }); return;
+    }
+    if (action === 'delete' && node) { if (deleteNode(node.id)) { draw(); save(); } return; }
     if (action === 'edge-delete') removeEdge(graph, panel.id);
     if (action === 'edge-auto') { const edge = edgeBy(panel.id); if (edge) Object.assign(edge, {routing: 'curve', controlPoints: null, waypoints: null, fromPort: 'auto', toPort: 'auto', curvature: .38, offset: 0}); }
     draw(); save();
@@ -253,25 +373,47 @@
     selected = id; openPanel('node', id); draw(); save();
   }
   function create(point) {
-    const node = {id: crypto.randomUUID(), title: '新想法', note: '', shape: 'ellipse', x: point.x, y: point.y - 50};
-    graph.nodes.push(node); selected = node.id; const panel = openPanel('node', node.id); draw(); save();
+    const node = {id: crypto.randomUUID(), title: '新想法', note: '', shape: 'rounded', x: point.x, y: point.y - 50};
+    if (graph.treeMode) {
+      const parentId = point.nodeId || selected || graph.rootId;
+      if (!changeTree(() => { node.parentId = parentId || null; graph.nodes.push(node); if (parentId) graph.edges.push({id:crypto.randomUUID(),from:parentId,to:node.id,label:''}); else graph.rootId=node.id; })) return;
+    } else graph.nodes.push(node);
+    selected = node.id; const panel = openPanel('node', node.id); draw(); save();
     const field = panel?.element.querySelector('[data-field="title"]'); field?.focus(); field?.select();
   }
-  function deleteNode(id) { removeNode(graph, id); if (selected === id) selected = null; }
+  function deleteNode(id) { if (graph.treeMode) { if (!changeTree(() => tree.remove(graph, id))) return false; } else removeNode(graph, id); if (selected === id) selected = null; return true; }
   function dismissMenu() { menu.hidden = true; menuPoint = null; }
   canvas.addEventListener('contextmenu', event => {
-    if (event.target.closest('.object-panel')) return;
+    hideNotePreview();
+    if (event.target.closest('.object-panel,.note-preview')) return;
     event.preventDefault(); if (event.target.closest('.zoom,.minimap')) return;
+    if (apiBusy) return;
     const bounds = canvas.getBoundingClientRect(), x = event.clientX - bounds.left, y = event.clientY - bounds.top;
+    const noteId = event.target.closest('.note-orb')?.dataset.nodeId;
     const nodeId = event.target.closest('.node')?.dataset.id;
-    menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z, nodeId};
-    menu.querySelector('[data-menu="create"]').hidden = Boolean(nodeId); menu.querySelector('[data-menu="delete"]').hidden = !nodeId; menu.hidden = false;
+    menuPoint = {x: (x - view.x) / view.z, y: (y - view.y) / view.z, nodeId, noteId};
+    menu.querySelector('[data-menu="create"]').hidden = Boolean(nodeId || noteId); menu.querySelector('[data-menu="delete"]').hidden = !nodeId; menu.hidden = false;
+    menu.querySelector('[data-menu="child"]').hidden = !graph.treeMode || !nodeId;
+    const clearNote = menu.querySelector('[data-menu="clear-note"]'), noteNode = by(noteId);
+    clearNote.hidden = !noteId; clearNote.disabled = !noteNode || visual(noteNode) !== 'full' || !noteNode.note;
+    menu.querySelector('[data-menu="create"]').textContent = graph.treeMode ? graph.nodes.length ? '新增子節點' : '新增根節點' : '新增物件';
     menu.style.left = Math.max(6, Math.min(bounds.width - menu.offsetWidth - 6, x)) + 'px'; menu.style.top = Math.max(6, Math.min(bounds.height - menu.offsetHeight - 6, y)) + 'px';
   });
-  menu.addEventListener('click', event => { const action = event.target.closest('[data-menu]')?.dataset.menu, point = menuPoint; if (!action) return; dismissMenu(); if (action === 'create' && point) create(point); if (action === 'delete' && point?.nodeId) { deleteNode(point.nodeId); draw(); save(); } });
+  menu.addEventListener('click', event => {
+    const button = event.target.closest('[data-menu]'), action = button?.dataset.menu, point = menuPoint;
+    if (!action || button.disabled || apiBusy) return;
+    dismissMenu();
+    if (['create','child'].includes(action) && point) create(point);
+    if (action === 'delete' && point?.nodeId && deleteNode(point.nodeId)) { draw(); save(); }
+    if (action === 'clear-note') {
+      const node = by(point?.noteId);
+      if (node && visual(node) === 'full' && node.note) { node.note = ''; closePanel('note:' + node.id); draw(); save(); }
+    }
+  });
   canvas.addEventListener('pointerdown', event => {
     if (apiBusy) return;
-    if (event.target.closest('#context-menu,.zoom,.minimap') || event.button !== 0 && event.button !== 1) return;
+    if (event.target.closest('#context-menu,.zoom,.minimap,.note-preview') || event.button !== 0 && event.button !== 1) return;
+    hideNotePreview();
     dismissMenu();
     if (event.button === 0 && event.target.closest('.object-panel')) return;
     event.preventDefault(); gesture = null;
@@ -293,7 +435,9 @@
     else if (gesture.type === 'pan') { view.x = gesture.x + dx; view.y = gesture.y + dy; }
     else if (gesture.type === 'panel') { const panel = panels.get(gesture.key); if (!panel) return; panel.x = gesture.x + dx / view.z; panel.y = gesture.y + dy / view.z; }
     else if (gesture.type === 'resize') { const node = by(gesture.node); node.width = Math.round(Math.max(70, Math.min(600, gesture.w + dx / view.z))); node.height = Math.round(Math.max(50, Math.min(500, gesture.h + dy / view.z))); if (node.shape === 'circle') node.width = node.height = Math.max(node.width, node.height); }
+    else if (graph.treeMode) { gesture.reorder = siblingDrop(event, gesture.node); gesture.target = null; }
     else { const node = by(gesture.node), panel = panels.get('node:' + node.id), nx = gesture.x + dx / view.z, ny = gesture.y + dy / view.z; if (panel) { panel.x += nx - node.x; panel.y += ny - node.y; } node.x = nx; node.y = ny; }
+    if (graph.treeMode && gesture.type === 'resize') tree.arrange(graph);
     draw();
   });
   function finish(event) {
@@ -303,28 +447,38 @@
     if (previous.type === 'minimap') { if (!previous.moved && event.type === 'pointerup') centerOn(miniPoint(event, previous.projection)); draw(); save(); return; }
     if (previous.type === 'link') {
       const target = linkTarget(event);
+      if (graph.treeMode) {
+        if (event.type === 'pointerup' && previous.moved && target && target !== previous.node && visual(by(target)) !== 'object') changeTree(() => tree.reparent(graph, previous.port === 'top' ? previous.node : target, previous.port === 'top' ? target : previous.node, crypto.randomUUID()));
+        draw(); return;
+      }
       if (event.type === 'pointerup' && previous.moved && target && target !== previous.node && visual(by(target)) !== 'object' && !graph.edges.some(edge => edge.from === previous.node && edge.to === target || edge.to === previous.node && edge.from === target)) graph.edges.push({id: crypto.randomUUID(), from: previous.node, to: target, label: '', color: '#64768d', width: 1.5, lineStyle: 'solid'});
       draw(); save(); return;
+    }
+    if (graph.treeMode && previous.type === 'node' && previous.moved) {
+      const drop = siblingDrop(event, previous.node);
+      if (event.type === 'pointerup' && drop) changeTree(() => tree.reorder(graph, previous.node, drop.beforeId));
+      draw(); return;
     }
     if (previous.moved) save(); else if (previous.type === 'node' && event.type === 'pointerup') select(previous.node);
     else if (previous.type === 'edge' && event.type === 'pointerup') { openPanel('edge', previous.edge); draw(); save(); }
   }
   window.addEventListener('pointerup', finish); window.addEventListener('pointercancel', finish);
-  window.addEventListener('blur', () => { dismissMenu(); if (gesture) { gesture = null; delete minimap.dataset.dragging; canvas.classList.remove('panning'); draw(); save(); } });
+  window.addEventListener('blur', () => { hideNotePreview(); dismissMenu(); if (gesture) { gesture = null; delete minimap.dataset.dragging; canvas.classList.remove('panning'); draw(); save(); } });
   canvas.addEventListener('auxclick', event => { if (event.button === 1) event.preventDefault(); });
-  canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu,.minimap')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
-  $('#ai-mode').addEventListener('change', event => { settings.aiMode = event.target.value; save(); });
+  canvas.addEventListener('wheel', event => { if (event.target.closest('.object-panel,#context-menu,.minimap,.note-preview')) return; event.preventDefault(); dismissMenu(); const bounds = canvas.getBoundingClientRect(); zoomAt(event.clientX - bounds.left, event.clientY - bounds.top, Math.exp(-event.deltaY * .001)); save(); }, {passive: false});
+  $('#ai-mode').addEventListener('change', event => { settings.aiMode = event.target.value; draw(); save(); });
   $('#visual-mode').addEventListener('change', event => { settings.visualMode = event.target.value; revealed.clear(); draw(); save(); });
   document.addEventListener('pointerdown', event => { if (!canvas.contains(event.target)) dismissMenu(); });
   document.addEventListener('click', event => { if (event.target.closest('.object-panel')) return; const action = event.target.closest('[data-action]')?.dataset.action; if (action === 'minus' || action === 'plus') { const bounds = canvas.getBoundingClientRect(); zoomAt(bounds.width / 2, bounds.height / 2, action === 'plus' ? 1.2 : 1 / 1.2); save(); } });
   window.addEventListener('keydown', event => {
     if (apiBusy) return;
-    if (event.key === 'Escape') { dismissMenu(); if (gesture?.type === 'link') gesture = null; selected = null; revealed.clear(); draw(); return; }
+    if (event.key === 'Escape') { dismissMenu(); if (['link','node'].includes(gesture?.type)) gesture = null; for (const [key,panel] of panels) if (panel.kind === 'note') closePanel(key); selected = null; revealed.clear(); draw(); return; }
     if (event.target.closest('input,textarea,select') || event.ctrlKey || event.metaKey || event.altKey) return;
     if (event.key.toLowerCase() === 'f') { overview(); save(); }
   });
   window.addEventListener('beforeunload', () => { if (ready) { try { commit(); } catch {} } });
   window.mapStore.onFlush(lock => {
+    hideNotePreview();
     if (gesture) throw new Error('使用者正在拖曳，請稍後重試');
     commit();
     if (lock) { apiBusy = true; document.body.classList.add('api-busy'); }
@@ -341,7 +495,7 @@
     for (const node of graph.nodes) if (!['circle', 'ellipse', 'diamond', 'rounded', 'rectangle'].includes(node.shape)) node.shape = 'ellipse';
     settings = {...settings, ...state.settings}; $('#ai-mode').value = settings.aiMode; $('#visual-mode').value = settings.visualMode;
     if (state.view && ['x', 'y', 'z'].every(key => Number.isFinite(state.view[key])) && state.view.z > 0) { view = state.view; draw(); } else overview();
-    for (const panel of state.panels || []) if (['node', 'edge'].includes(panel.kind) && Number.isFinite(panel.x) && Number.isFinite(panel.y)) openPanel(panel.kind, panel.id, panel);
+    for (const panel of state.panels || []) if (['node', 'edge', 'note'].includes(panel.kind) && Number.isFinite(panel.x) && Number.isFinite(panel.y)) openPanel(panel.kind, panel.id, panel);
     ready = true; window.mapStore.ready(); $('#save-status').textContent = '本機加密儲存 · AI API 已開啟'; new ResizeObserver(() => draw()).observe(canvas);
   } catch (error) { $('#save-status').textContent = '載入失敗：' + error.message; canvas.style.pointerEvents = 'none'; }
 })();

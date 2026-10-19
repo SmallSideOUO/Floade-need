@@ -1,0 +1,39 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Work Map 自由文字輸入",
+  "description": "統一物件與連線的資料容器；內容與關係以自由文字表達，沒有固定的語意分類或狀態。這是輸入草稿格式，寫入仍須轉成既有 AI API 操作。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["nodes", "edges"],
+  "properties": {
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\s\\u0000-\\u001f][^\\u0000-\\u001f]*$" },
+          "title": { "type": "string", "maxLength": 160 },
+          "note": { "type": "string", "maxLength": 20000 },
+          "parentId": { "type": ["string", "null"] },
+          "order": { "type": "number", "minimum": -100000, "maximum": 100000 }
+        }
+      }
+    },
+    "edges": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "from", "to"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 160, "pattern": "^[^\\s\\u0000-\\u001f][^\\u0000-\\u001f]*$" },
+          "from": { "type": "string", "minLength": 1 },
+          "to": { "type": "string", "minLength": 1 },
+          "label": { "type": "string", "maxLength": 80 }
+        }
+      }
+    }
+  }
+}

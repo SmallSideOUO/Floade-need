@@ -2,8 +2,10 @@
 const http=require('node:http'),crypto=require('node:crypto');
 const {aiMap}=require('./privacy.cjs');
 const {removeNode,removeEdge,boxOf}=require('./connections.cjs');
-const nodeFields=['title','note','mark','x','y','width','height','shape','background','textColor','opacity'];
+const tree=require('./tree.cjs');
+const nodeFields=['title','note','mark','x','y','width','height','shape','background','textColor','opacity','parentId','order'];
 const edgeFields=['from','to','label','color','width','lineStyle','routing','fromPort','toPort','curvature','offset','cornerRadius','controlPoints','waypoints'];
+const treeEdgeFields=['from','to','label','color','width','lineStyle'];
 class ApiError extends Error {constructor(status,message){super(message);this.status=status}}
 const fail=message=>{throw new ApiError(400,message)};
 function fields(patch,allowed){if(!patch||typeof patch!=='object'||Array.isArray(patch))fail('patch must be an object');for(const key of Object.keys(patch))if(!allowed.includes(key))fail('Unsupported property: '+key)}
@@ -15,6 +17,7 @@ function validateNode(node){
   for(const [key,min,max]of [['width',70,600],['height',50,500],['opacity',0,1]])if(node[key]!==undefined)finite(node[key],min,max,key);
   if(!['ellipse','circle','diamond','rounded','rectangle'].includes(node.shape))fail('Invalid shape');
   for(const key of ['background','textColor'])if(node[key]!==undefined&&!/^#[\da-f]{6}$/i.test(node[key]))fail('Invalid '+key);
+  if(node.order!==undefined)finite(node.order,-100000,100000,'order');
 }
 function validateEdge(edge){
   if(edge.label!==undefined)text(edge.label,80,'label');
@@ -23,8 +26,62 @@ function validateEdge(edge){
   for(const [key,values]of [['lineStyle',['solid','dashed']],['routing',['curve','rounded']],['fromPort',['auto','top','right','bottom','left']],['toPort',['auto','top','right','bottom','left']]])if(edge[key]!==undefined&&!values.includes(edge[key]))fail('Invalid '+key);
   for(const key of ['controlPoints','waypoints'])if(edge[key]!=null){if(!Array.isArray(edge[key])||(key==='controlPoints'?edge[key].length!==2:edge[key].length>12))fail('Invalid '+key);for(const point of edge[key]){fields(point,['x','y']);finite(point.x,-100000,100000,key);finite(point.y,-100000,100000,key)}}
 }
+function applyTreeOperations(state,operations){
+  const next=structuredClone(state);
+  try {
+    for(const op of operations){
+      fields(op,['op','id','patch']);text(op.id,160,'id');if(!op.id||/^[\s]|[\x00-\x1f]/.test(op.id))fail('Invalid id');
+      const graph=next.graph,readable=new Map(aiMap(next).graph.nodes.map(n=>[n.id,n]));
+      const allow=id=>{if(!readable.has(id))throw new ApiError(403,'Object is not AI-accessible')};
+      const node=graph.nodes.find(n=>n.id===op.id),edge=graph.edges.find(e=>e.id===op.id);
+      if(op.op==='tree.enable'){tree.enable(graph);continue}
+      if(!graph.treeMode)fail('Enable the tree before editing it');
+      if(op.op==='node.create'||op.op==='node.update'){
+        fields(op.patch,nodeFields);
+        if(op.op==='node.create'){
+          if(node)throw new ApiError(409,'Object already exists');
+          const parentId=op.patch.parentId??graph.rootId;
+          if(graph.nodes.length)allow(parentId);else if(parentId)fail('The first object must be the root');
+          const created={id:op.id,title:'新想法',note:'',shape:'rounded',x:0,y:0,...op.patch,parentId:parentId||null};validateNode(created);
+          graph.nodes.push(created);
+          if(parentId)graph.edges.push({id:crypto.randomUUID(),from:parentId,to:op.id,label:''});else graph.rootId=op.id;
+        }else{
+          allow(op.id);
+          if(readable.get(op.id).textWithheld&&['title','note','mark'].some(key=>key in op.patch))throw new ApiError(403,'Object text is withheld');
+          if(Object.hasOwn(op.patch,'parentId')&&op.patch.parentId!==node.parentId){allow(op.patch.parentId);tree.reparent(graph,node.id,op.patch.parentId,crypto.randomUUID())}
+          Object.assign(node,op.patch);validateNode(node);
+        }
+      }else if(op.op==='node.delete'){
+        allow(op.id);for(const child of graph.nodes.filter(n=>n.parentId===op.id))allow(child.id);
+        if(node.parentId)allow(node.parentId);tree.remove(graph,op.id);
+      }else if(op.op==='edge.delete'){
+        fail('樹狀連線不能單獨刪除；請修改子節點的 parentId');
+      }else if(op.op==='edge.create'||op.op==='edge.update'){
+        fields(op.patch,treeEdgeFields);
+        if(op.op==='edge.create'){
+          if(edge)throw new ApiError(409,'Connection already exists');
+          allow(op.patch.from);allow(op.patch.to);
+          if(graph.edges.some(e=>e.to===op.patch.to))throw new ApiError(409,'每個子節點只能有一個上層；請修改 parentId');
+          fail('新增節點時會自動建立樹狀連線');
+        }
+        if(!aiMap(next).graph.edges.some(e=>e.id===op.id))throw new ApiError(403,'Connection is not AI-accessible');
+        if(op.patch.to!==undefined&&op.patch.to!==edge.to)fail('請使用 node.update 的 parentId 修改上下關係');
+        if(op.patch.label!==undefined&&(readable.get(edge.from).textWithheld||readable.get(edge.to).textWithheld))throw new ApiError(403,'Object text is withheld');
+        if(op.patch.from!==undefined&&op.patch.from!==edge.from){allow(op.patch.from);tree.reparent(graph,edge.to,op.patch.from)}
+        Object.assign(edge,op.patch);validateEdge(edge);
+      }else fail('Unknown operation');
+    }
+    tree.arrange(next.graph);
+  }catch(error){if(error instanceof ApiError)throw error;throw new ApiError(400,error.message)}
+  const changed=(key)=>{
+    const before=new Map(state.graph[key].map(item=>[item.id,item])),after=new Map(next.graph[key].map(item=>[item.id,item]));
+    return [...new Set([...before.keys(),...after.keys()])].filter(id=>JSON.stringify(before.get(id))!==JSON.stringify(after.get(id)));
+  };
+  return {next,affectedNodes:changed('nodes'),affectedEdges:changed('edges')};
+}
 function applyOperations(state,operations){
   if(!Array.isArray(operations)||!operations.length||operations.length>100)fail('Supply 1..100 operations');
+  if(state.graph.treeMode||operations.some(op=>op?.op==='tree.enable'))return applyTreeOperations(state,operations);
   const next=structuredClone(state),affectedNodes=new Set(),affectedEdges=new Set();
   for(const op of operations){
     fields(op,['op','id','patch']);text(op.id,160,'id');if(!op.id||/^[\s]|[\x00-\x1f]/.test(op.id))fail('Invalid id');
@@ -83,7 +140,7 @@ function createApi({getState,flush,release,change,history,capture}){
         if(request.headers.origin||request.headers.authorization!=='Bearer '+token){reply(401,{error:'Local API token required; browser origins are not accepted'});return}
         const url=new URL(request.url,'http://localhost');let body={};
         if(request.method==='POST'){let text='';for await(const chunk of request){text+=chunk;if(Buffer.byteLength(text)>256*1024)throw new ApiError(413,'Request too large')}try{body=JSON.parse(text)}catch{fail('Invalid JSON')}}
-        if(request.method==='GET'&&url.pathname==='/v1/describe'){reply(200,{version:1,endpoints:['GET /v1/graph','POST /v1/changes','GET /v1/history?limit=50&before=<record-id>','POST /v1/screenshot'],nodeFields,edgeFields,operations:['node.create','node.update','node.delete','edge.create','edge.update','edge.delete'],changeRequest:{requestId:'unique id',expectedRevision:'GET graph revision',actor:'AI name',reason:'why',operations:[{op:'edge.update',id:'edge-id',patch:{routing:'curve',curvature:.4,offset:30}}]},screenshotRequest:{region:{x:0,y:0,width:1000,height:700},scale:1},privacy:'AI-filtered graph/history/screenshots; privacy controls cannot be changed through this API'});return}
+        if(request.method==='GET'&&url.pathname==='/v1/describe'){reply(200,{version:1,endpoints:['GET /v1/graph','POST /v1/changes','GET /v1/history?limit=50&before=<record-id>','POST /v1/screenshot'],nodeFields,edgeFields:getState().graph.treeMode?treeEdgeFields:edgeFields,operations:['tree.enable','node.create','node.update','node.delete','edge.update'],tree:{mode:'strict',oneRoot:true,oneParent:true,layout:'top-down',routing:'orthogonal',parentField:'parentId',siblingOrderField:'order'},changeRequest:{requestId:'unique id',expectedRevision:'GET graph revision',actor:'AI name',reason:'why',operations:[{op:'node.update',id:'node-id',patch:{parentId:'parent-id'}}]},screenshotRequest:{region:{x:0,y:0,width:1000,height:700},scale:1},privacy:'AI-filtered graph/history/screenshots; privacy controls cannot be changed through this API'});return}
         if(request.method==='GET'&&url.pathname==='/v1/graph'){await flush(false);const state=getState();reply(200,{...aiMap(state),revision:state.revision});return}
         if(request.method==='GET'&&url.pathname==='/v1/history'){await flush(false);const limit=Math.min(100,Math.max(1,Number(url.searchParams.get('limit'))||50)),records=history();let start=0;const before=url.searchParams.get('before');if(before){start=records.findIndex(r=>r.id===before)+1;if(!start)fail('Unknown history cursor')}const selected=records.slice(start,start+limit);reply(200,{records:selected.map(r=>publicHistory(r,getState())),nextCursor:start+limit<records.length?selected.at(-1)?.id:null});return}
         if(request.method==='POST'&&url.pathname==='/v1/changes'){await flush(true);try{const result=change(body);reply(200,result)}finally{release()}return}

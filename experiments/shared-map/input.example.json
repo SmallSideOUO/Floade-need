@@ -1,0 +1,22 @@
+{
+  "nodes": [
+    {
+      "id": "input-example-choice",
+      "title": "先隨便下一個決定",
+      "note": "假設你在空無一物的地方，就隨便下一個決定，看看環境反饋。"
+    },
+    {
+      "id": "input-example-feedback",
+      "title": "看看環境反饋",
+      "parentId": "input-example-choice"
+    }
+  ],
+  "edges": [
+    {
+      "id": "input-example-connection",
+      "from": "input-example-choice",
+      "to": "input-example-feedback",
+      "label": "先下一個決定，再看看環境反饋"
+    }
+  ]
+}

@@ -1,0 +1,1 @@
+{"mcpServers":{"floade-work-map":{"command":"node","args":["${PLUGIN_ROOT}/server.cjs"],"cwd":"${PLUGIN_ROOT}"}}}

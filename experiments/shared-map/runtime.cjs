@@ -1,9 +1,10 @@
 'use strict';
 const {app,BrowserWindow,ipcMain,nativeTheme,safeStorage}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),crypto=require('node:crypto');
-const {aiMap}=require('./privacy.cjs'),{applyOrganization}=require('./organization.cjs'),{layout}=require('./hierarchy.cjs'),{materialize}=require('./connections.cjs');
+const {aiMap}=require('./privacy.cjs'),{applyOrganization}=require('./organization.cjs'),{materialize}=require('./connections.cjs');
 const {ApiError,applyOperations,createApi}=require('./api.cjs');
 const {profilePath,migrateLegacy}=require('./profile.cjs');
+const tree=require('./tree.cjs');
 const profileArg=process.argv.find(a=>a.startsWith('--map-profile='));
 const hiddenTest=Boolean(profileArg&&process.argv.includes('--map-test-hidden'));
 const dataDir=profileArg?path.resolve(profileArg.slice(14)):profilePath(app.getPath('appData'));
@@ -16,7 +17,7 @@ let window,screenshotWindow,state,api,rendererReady=false;
 const pendingFlush=new Map(),auditDir=path.join(dataDir,'ai-history');
 const privatePath=path.join(dataDir,'map.private'),legacyPath=path.join(dataDir,'map.json'),publicPath=path.join(dataDir,'ai-map.json'),runtimePath=path.join(dataDir,'api-runtime.json');
 function atomic(file,content){const staged=file+'.writing';fs.writeFileSync(staged,content);fs.renameSync(staged,file)}
-function valid(value){if(!value||value.graph?.version!==1||!Array.isArray(value.graph.nodes)||!Array.isArray(value.graph.edges)||Buffer.byteLength(JSON.stringify(value))>8*1024*1024)throw new Error('地圖格式無效');return value}
+function valid(value){if(!value||value.graph?.version!==1||!Array.isArray(value.graph.nodes)||!Array.isArray(value.graph.edges)||Buffer.byteLength(JSON.stringify(value))>8*1024*1024)throw new Error('地圖格式無效');if(value.graph.treeMode)tree.validate(value.graph);return value}
 function encrypt(value){if(!safeStorage.isEncryptionAvailable())throw new Error('Windows 私人資料加密不可用，未寫入明文');return safeStorage.encryptString(JSON.stringify(value))}
 function persist(next){
   valid(next);const encrypted=encrypt(next);
@@ -28,13 +29,18 @@ function readEncrypted(file){return JSON.parse(safeStorage.decryptString(fs.read
 function history(){return fs.readdirSync(auditDir).filter(name=>name.endsWith('.private')).map(name=>{const file=path.join(auditDir,name),record=readEncrypted(file);if(record.status==='prepared'){record.status=state.lastAIChange===record.id?'committed':'interrupted';atomic(file,encrypt(record))}return record}).sort((a,b)=>b.time.localeCompare(a.time)||b.revision-a.revision)}
 function load(){
   let loaded=fs.existsSync(privatePath)?valid(readEncrypted(privatePath)):fs.existsSync(legacyPath)?valid(JSON.parse(fs.readFileSync(legacyPath,'utf8'))):{graph:JSON.parse(fs.readFileSync(path.join(__dirname,'seed.json'),'utf8'))};
-  const planPath=path.join(dataDir,'organization.json');if(fs.existsSync(planPath)&&applyOrganization(loaded,JSON.parse(fs.readFileSync(planPath,'utf8'))))delete loaded.view;
-  if(loaded.graph.layoutRevision!=='top-down-2026-10-12'){for(const position of layout(loaded.graph.nodes))Object.assign(loaded.graph.nodes.find(n=>n.id===position.id),position);loaded.graph.layoutRevision='top-down-2026-10-12';delete loaded.view}
+  const planPath=path.join(dataDir,'organization.json');if(!loaded.graph.treeMode&&fs.existsSync(planPath)&&applyOrganization(loaded,JSON.parse(fs.readFileSync(planPath,'utf8'))))delete loaded.view;
   materialize(loaded.graph);for(const node of loaded.graph.nodes)if(node.title==='新念頭')node.title='新想法';loaded.revision=Number.isSafeInteger(loaded.revision)?loaded.revision:0;persist(loaded);
   fs.mkdirSync(auditDir,{recursive:true});history();
+  if(!state.graph.treeMode){
+    change({requestId:crypto.randomUUID(),expectedRevision:state.revision,actor:'Floade',reason:'依樹狀圖規格轉換為唯一上層與固定上下分層；原圖保留在加密修改紀錄中。',operations:[{op:'tree.enable',id:'strict-tree'}]});
+    delete state.view;persist(state);
+  }
 }
 function saveUI(value){
   valid(value);if(value.revision!==state.revision)throw new ApiError(409,'地圖已更新，請重新載入');
+  if(state.graph.treeMode&&!value.graph.treeMode)throw new ApiError(400,'地圖必須維持樹狀結構');
+  tree.arrange(value.graph);
   persist({...value,revision:state.revision+1,lastAIChange:state.lastAIChange});return {revision:state.revision};
 }
 function release(){if(window&&!window.isDestroyed())window.webContents.send('map:external-state',structuredClone(state))}
