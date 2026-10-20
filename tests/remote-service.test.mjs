@@ -150,6 +150,8 @@ test('automatic mode uses native observations, persists a stable route and cance
   assert.equal((await service.dispatch('remote.status')).automatic.state, 'connected')
   const stored = JSON.parse(fs.readFileSync(path.join(directory, 'remote.json'), 'utf8'))
   assert.equal(stored.devices[0].connectionProfile, 'udp-webrtc')
+  assert.equal(stored.devices[0].connectionStats.desktop['udp-webrtc'].successes, 1)
+  const preservedSettings = stored.settings
   assert.equal(JSON.stringify(stored).includes('private-password'), false)
   await service.dispatch('remote.connection.cancel')
   const count = calls.filter(c => c.method === 'connect').length
@@ -158,6 +160,25 @@ test('automatic mode uses native observations, persists a stable route and cance
   assert.equal(calls.filter(c => c.method === 'connect').length, count)
   assert.deepEqual(windows, [])
   assert.equal((await service.dispatch('remote.status')).automatic.state, 'cancelled')
+  await service.dispatch('remote.devices.save', { deviceId: '123456789', alias: 'Renamed home' })
+  const afterEdit = JSON.parse(fs.readFileSync(path.join(directory, 'remote.json'), 'utf8'))
+  assert.deepEqual(afterEdit.settings, preservedSettings)
+  assert.deepEqual(afterEdit.devices[0].connectionStats, stored.devices[0].connectionStats)
+  afterEdit.devices[0].connectionStats.desktop.tcp = { successes: 6, failures: 0, stableMs: 60000, fpsRatio: 0.99, delayMs: 20 }
+  afterEdit.devices[0].connectionStats.files = { webrtc: { successes: 10 } }
+  fs.writeFileSync(path.join(directory, 'remote.json'), JSON.stringify(afterEdit))
+  const restarted = createRemoteService({ dataDirectory: directory, runtimeDirectory: directory,
+    engineCall: async (method, params) => {
+      calls.push({ method, params })
+      if (method === 'status') return { directOnly: true, autoConnectStatus: true, windows: [] }
+      if (method === 'connect') return { windowId: 3 }
+      return {}
+    } })
+  t.after(() => restarted.dispose())
+  assert.deepEqual((await restarted.dispatch('remote.settings.get')).settings, preservedSettings)
+  const resumed = await restarted.dispatch('remote.connect', { deviceId: '123456789' })
+  assert.equal(resumed.automatic.profile, 'tcp') // Calculated history outranks the last stable profile.
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'remote.json'), 'utf8')).devices[0].connectionStats, afterEdit.devices[0].connectionStats)
 })
 test('favorites save offline, migrate remembered devices, update credentials and survive recent-history eviction', async t => {
   const { directory, service, calls } = fixture(t)

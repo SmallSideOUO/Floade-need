@@ -131,8 +131,9 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     if (!response.ok || !message.ok) fail(message.error?.code || 'REMOTE_ENGINE_FAILED', message.error?.message || 'Remote engine request failed.')
     return message.result
   }
-  const automatic = createAutoConnector({ call, recover: () => start(), settings: () => state.settings,
-    remember: (id, profile) => save(current => ({ ...current, devices: current.devices.map(device => device.deviceId === id ? { ...device, connectionProfile: profile } : device) })) })
+  const automatic = createAutoConnector({ call, recover: () => start(), settings: () => state.settings, metrics: () => readMetrics().samples,
+    remember: (id, profile, history, mode) => save(current => ({ ...current, devices: current.devices.map(device => device.deviceId === id
+      ? { ...device, ...(history[profile].lastSuccess > (history[profile].lastFailure || 0) ? { connectionProfile: profile } : {}), connectionStats: { ...device.connectionStats, [mode]: history } } : device) })) })
   const engine = createEngineSupervisor({ start: startOnce, probe: () => call('status', {}, 1500) })
   const start = () => engine.ensure()
   async function startOnce(signal) {
@@ -191,6 +192,21 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     }
   }
 
+  function readMetrics() {
+    const logs = ['FloadeRemote_rCURRENT.log', 'flutter_ffi/FloadeRemote_rCURRENT.log', 'flutter_ffi/rustdesk_rCURRENT.log'].map(name => path.join(path.dirname(controlFile), 'log', name)).filter(name => fs.existsSync(name))
+    const samples = new Map()
+    for (const log of logs) {
+      const fd = fs.openSync(log, 'r')
+      let tail
+      try { const size = fs.fstatSync(fd).size; const buffer = Buffer.alloc(Math.min(size, 512 * 1024)); fs.readSync(fd, buffer, 0, buffer.length, size - buffer.length); tail = buffer.toString('utf8') } finally { fs.closeSync(fd) }
+      for (const line of tail.split(/\r?\n/)) {
+        const matched = line.match(/floade_perf (\{.*\})/)
+        if (!matched) continue
+        try { const sample = JSON.parse(matched[1]); if (!samples.has(String(sample.session)) || samples.get(String(sample.session)).sample_unix_ms < sample.sample_unix_ms) samples.set(String(sample.session), { ...sample, fresh: Date.now() - sample.sample_unix_ms < 15000 }) } catch {}
+      }
+    }
+    return { available: samples.size > 0, delayMeaning: 'shared-channel probe and processing; not input-to-display latency', samples: [...samples.values()] }
+  }
   async function dispatch(method, p = {}) {
     if (['remote.settings.get', 'remote.settings.update', 'remote.devices.save', 'remote.devices.forget', 'remote.connect'].includes(method)) requireRecoveredProfile()
     reload()
@@ -216,21 +232,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       return call('accessSet', { enabled: method === 'remote.access.disable' ? false : true, devices })
     }
     if (method === 'remote.settings.get') return publicState()
-    if (method === 'remote.metrics') {
-      const logs = ['FloadeRemote_rCURRENT.log', 'flutter_ffi/FloadeRemote_rCURRENT.log', 'flutter_ffi/rustdesk_rCURRENT.log'].map(name => path.join(path.dirname(controlFile), 'log', name)).filter(name => fs.existsSync(name))
-      const samples = new Map()
-      for (const log of logs) {
-        const fd = fs.openSync(log, 'r')
-        let tail
-        try { const size = fs.fstatSync(fd).size; const buffer = Buffer.alloc(Math.min(size, 512 * 1024)); fs.readSync(fd, buffer, 0, buffer.length, size - buffer.length); tail = buffer.toString('utf8') } finally { fs.closeSync(fd) }
-        for (const line of tail.split(/\r?\n/)) {
-        const matched = line.match(/floade_perf (\{.*\})/)
-        if (!matched) continue
-        try { const sample = JSON.parse(matched[1]); if (!samples.has(String(sample.session)) || samples.get(String(sample.session)).sample_unix_ms < sample.sample_unix_ms) samples.set(String(sample.session), { ...sample, fresh: Date.now() - sample.sample_unix_ms < 15000 }) } catch {}
-        }
-      }
-      return { available: samples.size > 0, delayMeaning: 'shared-channel probe and processing; not input-to-display latency', samples: [...samples.values()] }
-    }
+    if (method === 'remote.metrics') return readMetrics()
     if (method === 'remote.status') {
       try { return { available: true, running: true, ...await call('status', {}, 1500), engine: engine.snapshot(), automatic: automatic.snapshot() } } catch (error) {
         if (error.apiCode !== 'REMOTE_NOT_RUNNING') throw error
@@ -260,8 +262,9 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const id = validateDevice(p)
       const previous = state.devices.find(d => d.deviceId === id)
       const credential = protectedCredential({ ...p, remember: p.remember ?? true }, previous)
-      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
+      const device = { ...previous, deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
         ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
+      if (!credential) delete device.credential
       save(current => ({ ...current, devices: withDevice(device) }))
       return publicState()
     }
@@ -276,12 +279,14 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
         catch { fail('CREDENTIAL_UNAVAILABLE', 'Saved password cannot be read on this Windows account; update the device password.') }
       }
       const credential = protectedCredential({ ...p, password }, previous)
-      const device = { deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
+      const device = { ...previous, deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
+      if (!credential) delete device.credential
       withDevice(device) // Validate the favorite limit before opening a session.
       if (automatic.active) fail('REMOTE_BUSY', 'Stop the current automatic connection before opening another session.')
       let result
       if (state.settings.connectionMode === 'auto') {
-        result = await automatic.connect({ deviceId: id, password, mode: p.mode || 'desktop', preferred: previous?.connectionProfile })
+        const mode = p.mode || 'desktop'
+        result = await automatic.connect({ deviceId: id, password, mode, preferred: previous?.connectionProfile, history: previous?.connectionStats?.[mode] })
       } else { await start(); result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings }) }
       save(current => ({ ...current, devices: withDevice(device) }))
       return { ...result, deviceId: id, remembered: Boolean(credential) }

@@ -186,8 +186,9 @@ try {
   assert.equal(mobileSettings.gpu, true)
   await until(() => runRemote('document.querySelector("#connection-route").textContent === "P2P · 57 FPS"'))
   const remoteScreenshot = await remoteWindow.webContents.capturePage()
-  await fs.mkdir(path.join(root, 'release-output'), { recursive: true })
-  await fs.writeFile(path.join(root, 'release-output', 'remote-mobile-p2p.png'), remoteScreenshot.toPNG())
+  const screenshotDirectory = process.env.FLOADE_QA_OUTPUT_PATH || path.join(root, 'release-output')
+  await fs.mkdir(screenshotDirectory, { recursive: true })
+  await fs.writeFile(path.join(screenshotDirectory, 'remote-mobile-p2p.png'), remoteScreenshot.toPNG())
   remoteSample = { ...remoteSample, direct: false, presented_fps: { 1: 22 } }
   await until(() => runRemote('document.querySelector("#connection-route").textContent === "中繼 · 22 FPS"'))
   remoteSample = { ...remoteSample, fresh: false }
@@ -195,6 +196,7 @@ try {
   await runRemote('document.querySelector("#automatic-direct").click()')
   await until(async () => (await apiCall('remote.settings.get')).result.settings.connectionMode === 'auto')
   assert.equal(await runRemote('document.querySelector("#connectionMode").value'), 'auto')
+  assert.deepEqual((await apiCall('remote.settings.get')).result.settings, { ...mobileSettings, connectionMode: 'auto' })
   await apiCall('remote.settings.update', { settings: { connectionMode: 'manual' } })
   assert.equal((await apiCall('remote.settings.get')).result.settings.forceRelay, false)
   await runRemote(`document.querySelector('#add-device').click(); document.querySelector('#peer-id').value = '987654321'; document.querySelector('#peer-alias').value = '家裡電腦'; document.querySelector('#peer-password').value = 'favorite-qa-secret'; document.querySelector('#save-device').click()`)
@@ -218,7 +220,7 @@ try {
   await until(() => Promise.resolve(remoteCalls.filter(call => call.method === 'connect').at(-1).params.password === 'updated-favorite-qa-secret'))
   await runRemote(`document.querySelector('#favorites-card').scrollIntoView()`)
   await runRemote(`new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))`)
-  await fs.writeFile(path.join(root, 'release-output', 'remote-favorites.png'), (await remoteWindow.webContents.capturePage()).toPNG())
+  await fs.writeFile(path.join(screenshotDirectory, 'remote-favorites.png'), (await remoteWindow.webContents.capturePage()).toPNG())
   await runRemote(`document.querySelector('#host-setup').click()`)
   assert.equal(await runRemote(`document.querySelector('#settings-view').hidden`), false)
   results.push('Favorite devices save without connecting, reuse protected passwords for desktop/files, edit without exposing passwords and link to host full-access setup')
@@ -231,9 +233,13 @@ try {
   await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("自動重試")'))
   remoteAutomatic = { ...remoteAutomatic, state: 'exhausted', attempt: 7 }
   await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("均未成功")'))
-  results.push('Automatic switching mode, profile progress, stop control, authentication attention and exhaustion display correctly')
+  remoteAutomatic = { ...remoteAutomatic, state: 'connected', reason: 'WAITING_FOR_RECOVERY' }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("等待恢復")'))
+  remoteAutomatic = { ...remoteAutomatic, reason: undefined, locked: true }
+  await until(() => runRemote('document.querySelector("#automatic-status").textContent.includes("已固定")'))
+  results.push('Best connection mode, recovery grace, locked route, progress, stop control and authentication attention display correctly')
   remoteWindow.close()
-  results.push('mobile P2P preset persists UDP/WebRTC without TCP or forced relay; actual route/FPS rejects stale samples and automatic direct restores TCP')
+  results.push('mobile P2P preset persists UDP/WebRTC; best connection mode preserves every saved preference; actual route/FPS rejects stale samples')
   results.push('relative mouse shortcut records Ctrl+Alt+M, saves to the engine and restores Ctrl+Alt')
   assert.equal(launcher.ball.isAlwaysOnTop(), true)
   assert.equal(launcher.ball.__qaSkipTaskbar, true)

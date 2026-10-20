@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { createAutoConnector } from '../src/remote-auto-connect.mjs'
+import { createAutoConnector, rankConnectionProfiles } from '../src/remote-auto-connect.mjs'
 
 function fixture(t, options = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 1000 })
@@ -24,24 +24,25 @@ function fixture(t, options = {}) {
     tick: async (count = 1) => { for (let i = 0; i < count; i++) { t.mock.timers.tick(1500); await new Promise(setImmediate) } } }
 }
 
-test('automatic connection switches after failure, caches only stable video and recovers after a later outage', async t => {
+test('persistent failures change route only after recovery grace; stable video is remembered', async t => {
   const f = fixture(t)
   await f.connector.connect({ deviceId: '123456789', password: 'private-password', mode: 'desktop', preferred: 'tcp' })
   assert.equal(f.connector.snapshot().profile, 'tcp')
   f.observe({ state: 'network-error' })
-  await f.tick()
+  await f.tick(11)
   assert.equal(f.connector.snapshot().attempt, 2)
   f.observe({ state: 'connected', direct: true, video: false })
   await f.tick(3)
-  assert.equal(f.remembered.length, 0)
+  assert.equal(f.remembered.length, 1) // Failed-route evidence, no video success yet.
   f.observe({ state: 'connected', direct: true, video: true })
   await f.tick(10)
-  assert.equal(f.remembered.length, 0)
+  assert.equal(f.remembered.length, 1)
   await f.tick()
   assert.equal(f.connector.snapshot().state, 'connected')
-  assert.deepEqual(f.remembered, [['123456789', f.connector.snapshot().profile]])
+  assert.equal(f.remembered.at(-1)[1], f.connector.snapshot().profile)
+  assert.equal(f.remembered.at(-1)[2][f.connector.snapshot().profile].successes, 1)
   f.observe({ state: 'network-error' })
-  await f.tick()
+  await f.tick(11)
   assert.equal(f.connector.snapshot().state, 'connecting')
   assert.equal(f.connector.snapshot().attempt, 2)
   assert.equal(f.calls.filter(c => c.method === 'disconnect').length, 2)
@@ -54,7 +55,7 @@ test('seven direct combinations wait before another sweep and cancellation stops
   await f.connector.connect({ deviceId: '123456789', mode: 'desktop' })
   await assert.rejects(f.connector.connect({ deviceId: '987654321' }), { apiCode: 'REMOTE_BUSY' })
   f.observe({ state: 'network-error' })
-  await f.tick(7)
+  await f.tick(77)
   assert.equal(f.connector.snapshot().state, 'waiting')
   const attempts = f.calls.filter(c => c.method === 'connect')
   assert.equal(attempts.length, 7)
@@ -68,6 +69,56 @@ test('seven direct combinations wait before another sweep and cancellation stops
   f.connector.cancel()
   await f.tick(40)
   assert.equal(f.calls.filter(c => c.method === 'connect').length, 9)
+})
+
+test('best-route calculation weighs reliability, stable time, FPS, delay and recent failures', () => {
+  const now = 1000000
+  const good = { successes: 5, failures: 0, stableMs: 60000, connectMs: 1000 }
+  const history = { tcp: { ...good, fpsRatio: 0.3, delayMs: 600 }, webrtc: { ...good, fpsRatio: 0.95, delayMs: 40 } }
+  assert.equal(rankConnectionProfiles(history, 'tcp', now)[0].id, 'webrtc')
+  history.webrtc.lastFailure = now
+  assert.equal(rankConnectionProfiles(history, 'tcp', now)[0].id, 'tcp')
+  assert.equal(rankConnectionProfiles({}, 'tcp', now)[0].id, 'tcp')
+  assert.equal(rankConnectionProfiles({}, undefined, now)[0].id, 'udp-webrtc')
+})
+
+test('transient errors and poor performance keep the selected window; fresh performance is learned once per session', async t => {
+  let samples = []
+  const f = fixture(t, { metrics: () => samples })
+  await f.connector.connect({ deviceId: '123456789', mode: 'desktop' })
+  f.observe({ state: 'connected', direct: true, video: true })
+  samples = [{ fresh: true, direct: true, sample_unix_ms: Date.now(), presented_fps: { 1: 57 }, shared_path_delay_ms: 40 }]
+  await f.tick(11)
+  assert.equal(f.connector.snapshot().locked, true)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].fpsRatio, 0.95)
+  f.observe({ state: 'network-error' })
+  await f.tick(9)
+  assert.equal(f.calls.filter(c => c.method === 'disconnect').length, 0)
+  assert.equal(f.connector.snapshot().reason, 'WAITING_FOR_RECOVERY')
+  f.observe({ state: 'connected', direct: true, video: true })
+  samples = [{ fresh: true, direct: true, sample_unix_ms: Date.now(), presented_fps: { 1: 10 }, shared_path_delay_ms: 900 }]
+  await f.tick(25)
+  assert.equal(f.connector.snapshot().reason, undefined)
+  assert.equal(f.calls.filter(c => c.method === 'connect').length, 1)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].successes, 1)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].failures, 0)
+  assert.ok(f.remembered.at(-1)[2]['udp-webrtc'].fpsRatio < 0.95)
+})
+
+test('stale, indirect, ambiguous or unavailable metrics never replace successful connection evidence', async t => {
+  let samples = [{ fresh: true, direct: true, sample_unix_ms: 0, presented_fps: { 1: 60 } }]
+  const f = fixture(t, { metrics: () => samples })
+  await f.connector.connect({ deviceId: '123456789', mode: 'desktop' })
+  f.observe({ state: 'connected', direct: true, video: true })
+  await f.tick(11)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].fpsRatio, undefined)
+  samples = [1, 2].map(session => ({ session, fresh: true, direct: true, sample_unix_ms: Date.now(), presented_fps: { 1: 60 } }))
+  await f.tick(20)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].fpsRatio, undefined)
+  samples = [{ fresh: false, direct: false, sample_unix_ms: Date.now(), presented_fps: { 1: 60 } }]
+  await f.tick(20)
+  assert.equal(f.remembered.at(-1)[2]['udp-webrtc'].fpsRatio, undefined)
+  assert.equal(f.calls.filter(c => c.method === 'connect').length, 1)
 })
 
 test('authentication and user-closed windows stop switching, while a stalled handshake advances', async t => {

@@ -24,7 +24,7 @@ async function refreshSettings() {
   const result = await request('remote.settings.get')
   for (const [key, value] of Object.entries(result.settings)) { const el = $(key); if (el) { if (el.type === 'checkbox') el.checked = value; else el.value = value } }
   const s = result.settings
-  $('network-profile').textContent = s.connectionMode === 'auto' ? text('僅限直連：自動切換 7 組連線方式','Direct only: automatically try 7 connection profiles') : !s.tcpPunch && s.udpPunch && s.webrtc ? text('僅限直連：手機網路 P2P（UDP／WebRTC）','Direct only: mobile network P2P (UDP / WebRTC)')
+  $('network-profile').textContent = s.connectionMode === 'auto' ? text('僅限直連：自動計算最佳連線方式，連線後保持固定','Direct only: calculate the best connection and keep it stable') : !s.tcpPunch && s.udpPunch && s.webrtc ? text('僅限直連：手機網路 P2P（UDP／WebRTC）','Direct only: mobile network P2P (UDP / WebRTC)')
     : text('僅限直連：自訂／自動直連','Direct only: custom / automatic direct connection')
   savedDevices = result.devices
   for (const [container, favorites] of [[$('favorites'), true], [$('devices'), false]]) {
@@ -74,10 +74,11 @@ async function refreshStatus() {
   $('automatic-status').textContent = !automatic || automatic.state === 'cancelled' ? ''
     : ['waiting', 'recovering-engine'].includes(automatic.state) ? text(`正在${automatic.state === 'recovering-engine' ? '恢復遠端引擎' : '等待網路／對方裝置'}，約 ${Math.max(0, Math.ceil((automatic.nextRetryAt - Date.now()) / 1000))} 秒後自動重試。`,`Recovering ${automatic.state === 'recovering-engine' ? 'the remote engine' : 'the connection'}; retrying in ${Math.max(0, Math.ceil((automatic.nextRetryAt - Date.now()) / 1000))}s.`)
     : automatic.state === 'exhausted' ? text('7 組直連方式均未成功。請確認對方在線與網路，或用手動設定後重試。','All 7 direct profiles failed. Check the remote device and network, or retry with manual settings.')
-    : automatic.state === 'user-action' ? text('需要密碼或權限確認，已停止自動切換。請查看遠端視窗。','Authentication or permission needs attention. Automatic switching stopped; check the remote window.')
-    : automatic.state === 'engine-error' ? text('遠端引擎無法回應，已停止自動切換。','Remote engine unavailable; automatic switching stopped.')
-    : automatic.state === 'connected' ? text(`P2P 已穩定連線：${automatic.profile}；斷線時會自動嘗試其他方式。`,`Stable P2P: ${automatic.profile}; other profiles will be tried if the connection drops.`)
-    : text(`正在自動嘗試 ${automatic.attempt}／${automatic.total}：${automatic.profile}，並確認畫面穩定…`,`Trying ${automatic.attempt}/${automatic.total}: ${automatic.profile}; checking connection stability…`)
+    : automatic.state === 'user-action' ? text('需要密碼或權限確認，已暫停自動連線。請查看遠端視窗。','Authentication or permission needs attention. Check the remote window.')
+    : automatic.state === 'engine-error' ? text('遠端引擎無法回應，已暫停自動連線。','Remote engine unavailable; automatic connection paused.')
+    : automatic.reason === 'WAITING_FOR_RECOVERY' ? text(`網路暫時異常，保留 ${automatic.profile} 等待恢復，持續失敗才重新評估。`,`Temporary network error; keeping ${automatic.profile} while waiting for recovery.`)
+    : automatic.state === 'connected' ? text(`P2P 已穩定連線：${automatic.profile}；目前方式已固定，持續累積評估紀錄。`,`Stable P2P: ${automatic.profile}; keeping this route and learning from its performance.`)
+    : text(`依連線紀錄評估 ${automatic.attempt}／${automatic.total}：${automatic.profile}，確認穩定後固定使用…`,`Evaluating ${automatic.attempt}/${automatic.total}: ${automatic.profile}; locking the route once stable…`)
   if (!result.windows?.length) { $('connection-route').textContent = text('尚無作用中的對外連線。','No active outgoing connection.'); return }
   const metrics = await request('remote.metrics')
   const samples = (metrics.samples || []).filter(sample => sample.fresh).sort((a, b) => b.sample_unix_ms - a.sample_unix_ms)
@@ -87,7 +88,7 @@ async function refreshStatus() {
   }).join(' · ') : text('連線中，等待畫面資料…','Connecting; waiting for video data…')
 }
 async function setNetworkProfile(tcpPunch) {
-  await request('remote.settings.update', { settings: { connectionMode: tcpPunch ? 'auto' : 'manual', forceRelay: false, tcpPunch, udpPunch: true, webrtc: true } })
+  await request('remote.settings.update', { settings: tcpPunch ? { connectionMode: 'auto' } : { connectionMode: 'manual', forceRelay: false, tcpPunch: false, udpPunch: true, webrtc: true } })
   await refreshSettings()
   message(text('連線方式已儲存，下一次連線時套用。','Connection mode saved for the next connection.'))
 }
