@@ -17,6 +17,7 @@ import { saveMarkdownImage, resolveMarkdownImage } from './markdown-assets.mjs'
 import { createAutoPull } from './pull-folder.mjs'
 import { createAppUpdater, createInstalledAppUpdater } from './app-updater.mjs'
 import { openWorkMap } from './work-map.mjs'
+import { openFloadeCut } from './floade-cut.mjs'
 import { createRemoteService } from './remote-service.mjs'
 import { createRemoteWindow } from './remote-window.mjs'
 
@@ -963,6 +964,7 @@ if (process.argv.includes('--work-map')) {
     if (name === 'text-translate') return screenTranslator?.openTextWindow()
     if (name === 'screen-translate') return screenTranslator?.start()
     if (name === 'work-map') return openWorkMap({ appPath: app.getAppPath(), isPackaged: app.isPackaged })
+    if (name === 'floade-cut') return openFloadeCut({ openPath: target => shell.openPath(target), locale: effectiveLocale() })
     if (name === 'settings') return showSettings()
     if (name === 'quit') return requestQuit()
     const folder = folders.find(folder => folder.path === folderPath)

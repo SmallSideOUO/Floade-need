@@ -1,5 +1,7 @@
 const messages = {
   en: {
+    'floadeCut.notInstalled': 'FloadeCut could not be found. Install Floade Cut and try again.',
+    'floadeCut.launchFailed': 'Could not open FloadeCut: {message}',
     'preview.imageFailed': 'Could not save the image beside this Markdown file.',
     'launcher.closeDocument': 'Save or resolve the conflicting draft in the open document before trying again.', 'launcher.fileExists': 'A document with this name already exists.', 'launcher.invalidName': 'Enter a valid file name without a folder path.', 'launcher.invalidPath': 'Choose a Markdown file inside this folder.',
     'menu.showBall': 'Show floating ball', 'menu.hideBall': 'Hide floating ball', 'launcher.busy': 'This folder is busy. Try again when its operation finishes.',
@@ -61,6 +63,8 @@ const messages = {
     'language.ru': 'Russian'
   },
   'zh-TW': {
+    'floadeCut.notInstalled': '找不到 FloadeCut，請先安裝 Floade Cut 再重試。',
+    'floadeCut.launchFailed': '無法開啟 FloadeCut：{message}',
     'preview.imageFailed': '無法將圖片儲存到 Markdown 旁的資料夾。',
     'launcher.closeDocument': '請先儲存或處理文件視窗內的編輯衝突，再重試。', 'launcher.fileExists': '已有同名文件，請換一個名稱。', 'launcher.invalidName': '請輸入有效的文件名稱，不要包含資料夾路徑。', 'launcher.invalidPath': '請選擇此資料夾內的 Markdown 文件。',
     'menu.showBall': '顯示小球', 'menu.hideBall': '隱藏小球', 'launcher.busy': '資料夾正在處理中，完成後再試。',

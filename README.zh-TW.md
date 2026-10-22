@@ -29,6 +29,7 @@ Floade 沒有自己的雲端後端，也不會收到連結資料夾的副本；�
 ## 功能
 
 - 「框選翻譯」右側的 [Work Map（實驗）](experiments/shared-map/README.md)：獨立的思考地圖畫布，提供可編輯連線、私人本機保存與保留修改紀錄的 AI API
+- Work Map 下方的「FloadeCut」可直接開啟已安裝的影片剪輯器，支援開始選單捷徑與 Windows 預設安裝位置。
 - [Android 手機文件](https://smallsideouo.github.io/Floade-need/mobile/)：可加入主畫面，瀏覽/編輯 Markdown、保留離線草稿與比較同步衝突，詳見[手機使用說明](docs/mobile-guide.md)
 - 自動 Pull 每分鐘檢查一次；本機修改、文件開啟中或操作中時暫停。資料夾有「更新」按鈕，設定可關閉自動接收
 

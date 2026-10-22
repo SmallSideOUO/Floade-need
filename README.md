@@ -27,6 +27,7 @@ Floade itself has no hosted backend and does not receive a copy of the linked fo
 ## Features
 
 - Opens the experimental [Work Map](experiments/shared-map/README.md) from the button beside Screen translation: a separate graph canvas with private local storage, editable connections and an audited AI API
+- Opens the installed FloadeCut video editor from the button below Work Map, using its Start Menu shortcut or standard Windows installation location.
 - [Android-installable mobile web app](https://smallsideouo.github.io/Floade-need/mobile/) for GitHub-backed Markdown browsing/editing, offline drafts and reviewed conflict resolution; see the [mobile guide](docs/mobile-guide.md)
 - Automatically receives clean fast-forward updates every minute; pauses for local changes, open documents and busy folders, with manual Update and a settings toggle
 

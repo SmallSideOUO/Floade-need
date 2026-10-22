@@ -82,7 +82,8 @@ test('failed password recovery preserves the source and blocks empty-profile wri
   const source = path.join(root, 'legacy.json')
   const bytes = JSON.stringify({ devices: [{ deviceId: '123456789', credential: 'unreadable' }] })
   fs.writeFileSync(source, bytes)
-  const service = createRemoteService({ dataDirectory: root, runtimeDirectory: root, legacyProfileSources: [source] })
+  const service = createRemoteService({ dataDirectory: root, runtimeDirectory: root, legacyProfileSources: [source],
+    engineCall: async () => { throw Object.assign(new Error('Test engine is stopped'), { apiCode: 'REMOTE_NOT_RUNNING' }) } })
   t.after(() => service.dispose())
   for (const method of ['remote.settings.get', 'remote.settings.update', 'remote.devices.save', 'remote.devices.forget', 'remote.connect']) {
     await assert.rejects(service.dispatch(method), { apiCode: 'REMOTE_PROFILE_RECOVERY_FAILED' })

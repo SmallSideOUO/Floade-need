@@ -20,6 +20,7 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const loginWrites = []
 const workMapRequests = []
+const floadeCutRequests = []
 let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
 const remoteCalls = []
 let remoteAutomatic = null
@@ -33,6 +34,7 @@ globalThis.previewRemoteFactory = options => {
     ? Promise.resolve({ samples: [remoteSample] }) : method === 'remote.status' ? service.dispatch(method, params).then(status => ({ ...status, automatic: remoteAutomatic })) : service.dispatch(method, params) }
 }
 globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
+globalThis.previewOpenFloadeCut = async options => { floadeCutRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
 const originalFetch = globalThis.fetch
 globalThis.previewApiFolder = path.join(temporary, 'Notes')
@@ -97,6 +99,9 @@ source = source.replace('    autoPushTimer = setInterval(runDailyPush, 60 * 1000
 source = source.replace("    if (process.platform === 'win32' && app.isPackaged)", '    if (true)')
 source = source.replace('app.setLoginItemSettings(', 'globalThis.previewLoginSettings(')
 source = source.replace('return openWorkMap({', 'return globalThis.previewOpenWorkMap({')
+source = source.replace('return openFloadeCut({', 'return globalThis.previewOpenFloadeCut({')
+// Remote UI assertions below use Traditional Chinese independently of the host locale.
+source = source.replace('icon: windowIconPath, locale: effectiveLocale })', "icon: windowIconPath, locale: () => 'zh-TW' })")
 source = source.replace('  app.whenReady().then(() => {',
   '  globalThis.previewQA = { loadFolders, openMarkdownPreview, previewWindows, previewFiles, hasPushableChanges, buildTrayMenu, requestQuit, readLauncherData, openFloadeMenu, getLauncher: () => floatingLauncher }\n  app.whenReady().then(() => {')
 const instrumented = path.join(temporary, 'main.mjs')
@@ -149,17 +154,27 @@ try {
   const runPanel = code => launcher.panel.webContents.executeJavaScript(code)
   await until(() => runBall('Boolean(window.floadeLauncher)'))
   await until(() => runPanel('Boolean(window.floadeLauncher)'))
-  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 5)
+  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 6)
   assert.equal(await runPanel('document.querySelector("#add-folder").nextElementSibling.id'), 'remote')
   assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'work-map')
   await until(() => runPanel('document.querySelector("#work-map img").naturalWidth > 0'))
   await runPanel('document.querySelector("#work-map").click()')
   await until(() => Promise.resolve(workMapRequests.length === 1))
   assert.equal(workMapRequests[0].appPath, root)
+  assert.equal(await runPanel(`(() => {
+    const map = document.querySelector('#work-map').getBoundingClientRect()
+    const cut = document.querySelector('#floade-cut').getBoundingClientRect()
+    return cut.top >= map.bottom && Math.abs(cut.left - map.left) < 1 && Math.abs(cut.width - map.width) < 1
+  })()`), true)
+  await runPanel('document.querySelector("#floade-cut").click()')
+  await until(() => Promise.resolve(floadeCutRequests.length === 1))
+  assert.equal(typeof floadeCutRequests[0].openPath, 'function')
+  assert.ok(['en', 'zh-TW'].includes(floadeCutRequests[0].locale))
+  results.push('FloadeCut sits directly below Work Map and its button reaches the main-process app launcher')
   results.push('Work Map appears to the right of screen translation, loads the Floade logo and invokes the main-process launch action')
   assert.equal(await runPanel('Boolean(document.querySelector("#communication"))'), false)
   assert.equal(await runBall('Boolean(document.querySelector("#ball-unread"))'), false)
-  results.push('AI communication UI and APIs remain removed; five quick actions including Remote load normally')
+  results.push('AI communication UI and APIs remain removed; six quick actions including Remote and FloadeCut load normally')
   assert.equal((await apiCall('remote.settings.update', { settings: { forceRelay: true } })).ok, false)
   await runPanel('document.querySelector("#remote").click()')
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('remote.html'))))
@@ -167,7 +182,7 @@ try {
   const runRemote = code => remoteWindow.webContents.executeJavaScript(code)
   await until(() => runRemote('document.querySelector("#relativeMouseShortcut").value === "Ctrl+Alt"'))
   await until(() => runRemote('document.querySelector("#device-id").textContent === "123456789"'))
-  assert.equal(await runRemote('document.querySelector("#message").textContent.includes("已恢復")'), true)
+  await until(() => runRemote('document.querySelector("#message").textContent.includes("已恢復")'))
   remoteStartupFails = false
   results.push('Remote startup failure does not stop status polling; recovery clears the stale error')
   await runRemote(`document.querySelector('[data-view="settings"]').click(); document.querySelector('#relativeMouseShortcut').dispatchEvent(new KeyboardEvent('keydown', {key:'m', code:'KeyM', ctrlKey:true, altKey:true, bubbles:true})); document.querySelector('#settings-form').requestSubmit()`)

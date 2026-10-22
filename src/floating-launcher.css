@@ -59,7 +59,8 @@ button:focus-visible { outline: 1px solid #aaa; outline-offset: 1px; }
 #remote { grid-column: 1; grid-row: 2; }
 #text-translate { grid-column: 2; grid-row: 1 / 3; align-content: center; }
 #screen-translate { grid-column: 3; grid-row: 1 / 3; align-content: center; }
-#work-map { grid-column: 4; grid-row: 1 / 3; align-content: center; }
+#work-map { grid-column: 4; grid-row: 1; }
+#floade-cut { grid-column: 4; grid-row: 2; }
 #items { flex: 1; min-height: 0; overflow: auto; padding: 0 10px; }
 #documents { min-height: 0; overflow: visible; padding: 0; }
 #folders { max-height: none; overflow: visible; }
