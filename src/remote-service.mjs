@@ -24,6 +24,7 @@ export const remoteMethods = {
   'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
   'remote.connection.cancel': { description: 'Stop automatic connection attempts and close its session.', params: {} },
   'remote.disconnect': { description: 'Close one native session window.', params: { windowId: 'integer from remote.status' } },
+  'remote.preview': { description: 'Switch an existing Windows desktop session to a view-only, always-on-top preview without reconnecting.', params: { windowId: 'integer from remote.status', action: 'open (default), restore, collapse or status' } },
   'remote.devices.forget': { description: 'Remove a saved device and its protected credential.', params: { deviceId: 'numeric device code' } },
   'remote.devices.save': { description: 'Add/update a favorite without connecting. Credentials use Windows protected storage and are never returned.', params: { deviceId: 'numeric device code', alias: 'optional name', password: 'optional write-only permanent password; omitted or empty preserves saved password', remember: 'optional boolean; false removes saved password', favorite: 'optional boolean; defaults to true' } },
   'remote.advanced.open': { description: 'Open advanced native settings and tools.', params: {} },
@@ -305,6 +306,10 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
         if (observed.state !== 'closed') await call('disconnect', { windowId: current.windowId })
       }
       return { cancelled: true }
+    }
+    if (method === 'remote.preview') {
+      if (!Number.isInteger(p.windowId) || p.windowId <= 0 || !['open', 'restore', 'collapse', 'status'].includes(p.action ?? 'open')) fail('INVALID_PARAMS', 'A native desktop window ID and valid preview action are required.')
+      return call('miniPreview', { windowId: p.windowId, action: p.action ?? 'open' })
     }
     if (method === 'remote.disconnect') {
       if (!Number.isInteger(p.windowId) || p.windowId <= 0) fail('INVALID_PARAMS', 'windowId must be a native session window ID.')

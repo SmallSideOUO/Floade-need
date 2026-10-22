@@ -17,6 +17,21 @@ function fixture(t) {
   t.after(() => service.dispose())
   return { directory, calls, service }
 }
+
+test('preview changes only the existing window and rejects invalid actions before dispatch', async t => {
+  const { directory, calls, service } = fixture(t)
+  const before = fs.readFileSync(path.join(directory, 'remote.json'))
+  for (const params of [{ windowId: 0 }, { windowId: '2' }, { windowId: 2, action: 'disconnect' }]) {
+    await assert.rejects(service.dispatch('remote.preview', params), { apiCode: 'INVALID_PARAMS' })
+  }
+  assert.equal(calls.length, 0)
+  for (const action of ['open', 'collapse', 'restore', 'status']) {
+    await service.dispatch('remote.preview', { windowId: 2, action })
+    assert.deepEqual(calls.at(-1), { method: 'miniPreview', params: { windowId: 2, action } })
+  }
+  assert.deepEqual(fs.readFileSync(path.join(directory, 'remote.json')), before)
+  assert.equal(calls.some(call => ['connect', 'disconnect', 'apply'].includes(call.method)), false)
+})
 test('remote API validates before mutation and manual settings persist through restart', async t => {
   const { directory, calls, service } = fixture(t)
   const api = createLocalApi({ remote: service.dispatch })

@@ -1,5 +1,13 @@
 # Floade Remote
 
+## Floating preview (0.1.36)
+
+In a Windows desktop session, click the picture-in-picture button beside the relative-mouse hint. The existing native window becomes a small, always-on-top, view-only preview. Drag its header to move it, resize its edges, and double-click the picture/header or click Expand to restore the full window. The minus button collapses it to a small draggable label while keeping the session connected; click the label to reopen the preview. Closing the preview through the Windows close action also collapses it. Disconnect remains an explicit action in the normal remote controls.
+
+The dropdown beside the preview button offers **Preview when minimized**, disabled by default and saved on this controlling computer. Preview position and size are remembered separately from the normal remote window. Changing modes releases remote keyboard/mouse capture and relative mouse mode. The preview reuses the current decoded image/texture and direct connection; it does not create a second video stream or change the requested FPS/quality. Authentication and connection failures show an overlay that directs the user back to the full window when needed. Static desktop images do not imply a stalled connection.
+
+`remote.preview` accepts an active desktop `windowId` and `action` (`open`, `restore`, `collapse`, or `status`). It cannot create a connection or elevate permissions. Native status advertises `miniPreview=true` when supported.
+
 ## Saved devices after Windows startup (0.1.33)
 
 Windows can redirect AppData writes into an MSIX parent's private profile when Floade is launched from that parent. Normal startup then sees a different profile. If `remote.json` is missing, Floade recovers the newest valid saved-device profile from the same Windows user's Codex package cache. When Chromium profile keys differ, Windows DPAPI unlocks the old key in memory and the current protected storage re-encrypts each password. Plaintext passwords and keys are never saved or logged. Floade flushes and atomically creates the restored file, and retains the original shadow as a timestamped backup. An existing profile, including an intentionally empty device list, is never replaced. The current Local State, native engine identity and host keys are not replaced.
