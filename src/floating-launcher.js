@@ -137,6 +137,7 @@ if (isBall) {
   grip.addEventListener('pointerup', finishSize)
   grip.addEventListener('pointercancel', finishSize)
   async function perform(name, folderPath) {
+    status.className = ''; status.textContent = ''
     const result = await window.floadeLauncher.action(name, folderPath)
     if (!result?.ok) { status.className = 'error'; status.textContent = result?.message || t('launcher.actionFailed') }
   }
@@ -243,8 +244,9 @@ if (isBall) {
     updateActive()
     document.querySelector('#list-heading').textContent = t(query ? 'launcher.results' : 'launcher.folders')
     document.querySelector('#document-count').textContent = String(visibleFolders.length + visibleDocuments.length)
-    status.className = ''
-    status.textContent = data.indexing && query ? t('launcher.loading') : ''
+    if (!status.classList.contains('error')) {
+      status.textContent = data.indexing && query ? t('launcher.loading') : ''
+    }
     if (!visibleFolders.length && !visibleDocuments.length) {
       const empty = document.createElement('div')
       empty.className = 'empty'

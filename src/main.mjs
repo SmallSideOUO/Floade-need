@@ -273,6 +273,7 @@ if (process.argv.includes('--work-map')) {
     const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
     const existingWindow = previewWindows.get(key)
     if (existingWindow && !existingWindow.isDestroyed()) {
+      if (existingWindow.isMinimized()) existingWindow.restore()
       existingWindow.show()
       existingWindow.focus()
       return
@@ -363,6 +364,7 @@ if (process.argv.includes('--work-map')) {
 
     const existingPicker = [...previewPickers.values()].find(picker => picker.folderPath === folder.path)
     if (existingPicker && !existingPicker.window.isDestroyed()) {
+      if (existingPicker.window.isMinimized()) existingPicker.window.restore()
       existingPicker.window.show()
       existingPicker.window.focus()
       return
@@ -523,6 +525,7 @@ if (process.argv.includes('--work-map')) {
 
   function showSettings() {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
+      if (settingsWindow.isMinimized()) settingsWindow.restore()
       settingsWindow.show()
       settingsWindow.focus()
       return

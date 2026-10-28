@@ -146,6 +146,16 @@ $('relativeMouseShortcut').addEventListener('keydown', event => {
   if ((!primary && event.ctrlKey && event.altKey) || (primary && (keys.length > 1 || primary.startsWith('F')))) $('relativeMouseShortcut').value = keys.join('+')
 })
 $('reset-relative-shortcut').addEventListener('click', () => { $('relativeMouseShortcut').value = 'Ctrl+Alt' })
+for (const button of document.querySelectorAll('[data-game-fps]')) {
+  button.addEventListener('click', () => {
+    $('fps').value = button.dataset.gameFps
+    $('quality').value = '70'
+    $('codec').value = 'h264'
+    $('gpu').checked = true
+    $('hardwareCodec').checked = true
+    message(text('高速網路／遊戲預設已填入，按「儲存設定」後套用至新連線。','Gaming preset selected. Save settings to apply it to new connections.'))
+  })
+}
 $('copy-id').addEventListener('click', () => void action(async () => { await navigator.clipboard.writeText($('device-id').textContent); message(text('代碼已複製。','Code copied.')) }))
 $('temporary').addEventListener('click', () => void action(async () => { const result = await request('remote.password.temporary'); $('temporary-password').textContent = result.password; setTimeout(() => { $('temporary-password').textContent = '' }, 30000) }))
 $('settings-form').addEventListener('submit', event => { event.preventDefault(); void action(async () => {

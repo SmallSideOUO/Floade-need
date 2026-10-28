@@ -122,6 +122,8 @@ Hover over the floating ball, or click it to focus the panel:
 
 The tray's right-click menu offers **Settings**, **Show/Hide floating ball**, **Check for app updates** and **Quit**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. You can also use **Quit** at the bottom of the panel or `floade stop` to exit. Quit saves open documents first; a file conflict or active folder operation pauses the quit.
 
+Hovering leaves keyboard focus with the current app; pressing inside the panel activates it for that same click. Quick actions start before the panel hides, and a failed launch reopens the panel with an error that stays visible until retry. Work Map launches as a visible interactive application. Remote, Settings, Markdown editors and preview pickers restore their existing minimized window when reopened. Work Map and text translation already restore their existing windows.
+
 ### App updates
 
 The installed Windows app checks this repository's GitHub Releases 30 seconds after startup and every six hours, and downloads stable releases automatically. Settings shows the installed version, channel, download progress, a manual check button and an automatic-update toggle. When a download is ready, choose **Restart and update** from Settings or the tray. Open documents are saved before the installer runs; unresolved conflicts or active sync operations pause the restart. Updates never install during normal quit or Windows shutdown. The npm/source version does not update itself.
@@ -183,3 +185,8 @@ Questions, feedback, and ideas are welcome in the [Floade Discord](https://disco
 ## License
 
 [MIT](LICENSE)
+
+
+### Independent video/input candidate
+
+Version `0.1.38-split.20261028` separates video into a dedicated direct P2P connection while input retains the authenticated primary transport. Both endpoints must support the feature; older peers remain compatible. See [the implementation and validation notes](docs/split-video.md). This candidate does not establish sustained WAN 60 FPS or input-to-display latency.

@@ -20,6 +20,8 @@ const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const loginWrites = []
 const workMapRequests = []
+const workMapLaunchStates = []
+let failWorkMapLaunch = false
 const floadeCutRequests = []
 let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
 const remoteCalls = []
@@ -33,7 +35,11 @@ globalThis.previewRemoteFactory = options => {
   return { ...service, dispatch: (method, params) => method === 'remote.start' && remoteStartupFails ? Promise.reject(Object.assign(Error('Remote engine did not become ready in time.'), { apiCode: 'REMOTE_START_FAILED' })) : method === 'remote.metrics'
     ? Promise.resolve({ samples: [remoteSample] }) : method === 'remote.status' ? service.dispatch(method, params).then(status => ({ ...status, automatic: remoteAutomatic })) : service.dispatch(method, params) }
 }
-globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
+globalThis.previewOpenWorkMap = async options => {
+  workMapRequests.push(options)
+  workMapLaunchStates.push(globalThis.previewQA.getLauncher().panel.__qaShown === true)
+  if (failWorkMapLaunch) throw Error('Work Map launch fixture failed')
+}
 globalThis.previewOpenFloadeCut = async options => { floadeCutRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
 const originalFetch = globalThis.fetch
@@ -55,6 +61,9 @@ const hideQAWindow = (_event, window) => {
   const nativeHide = window.hide.bind(window)
   window.hide = () => { window.__qaShown = false; nativeHide() }
   window.focus = () => { window.__qaSkipTaskbar = false; window.emit('focus') }
+  const nativeIsMinimized = window.isMinimized.bind(window)
+  window.isMinimized = () => window.__qaMinimized ?? nativeIsMinimized()
+  window.restore = () => { window.__qaMinimized = false }
   window.webContents.setBackgroundThrottling(false)
 }
 app.on('browser-window-created', hideQAWindow)
@@ -158,9 +167,33 @@ try {
   assert.equal(await runPanel('document.querySelector("#add-folder").nextElementSibling.id'), 'remote')
   assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'work-map')
   await until(() => runPanel('document.querySelector("#work-map img").naturalWidth > 0'))
-  await runPanel('document.querySelector("#work-map").click()')
+  await launcher.showPanel()
+  const hoverPanelBounds = launcher.panel.getBounds()
+  globalThis.previewCursor = { x: hoverPanelBounds.x + 40, y: hoverPanelBounds.y + 40 }
+  launcher.panel.emit('focus')
+  launcher.panel.emit('blur')
+  assert.equal(launcher.panel.__qaShown, true, 'activation blur under the pointer must not eat the first hover click')
+  const workMapClick = await runPanel(`(() => { const b = document.querySelector('#work-map').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()`)
+  globalThis.previewCursor = { x: hoverPanelBounds.x + workMapClick.x, y: hoverPanelBounds.y + workMapClick.y }
+  launcher.panel.webContents.focus()
+  launcher.panel.webContents.sendInputEvent({ type: 'mouseDown', ...workMapClick, button: 'left', clickCount: 1 })
+  launcher.panel.webContents.sendInputEvent({ type: 'mouseUp', ...workMapClick, button: 'left', clickCount: 1 })
   await until(() => Promise.resolve(workMapRequests.length === 1))
+  assert.equal(workMapLaunchStates[0], true, 'launch begins before the clicked panel gives up focus')
   assert.equal(workMapRequests[0].appPath, root)
+  assert.equal(launcher.panel.__qaShown, false)
+  failWorkMapLaunch = true
+  await launcher.showPanel()
+  await runPanel('document.querySelector("#work-map").click()')
+  await until(() => runPanel('document.querySelector("#status").textContent === "Work Map launch fixture failed"'))
+  assert.equal(launcher.panel.__qaShown, true, 'failed launches keep their error visible')
+  await launcher.refreshData()
+  await wait(100)
+  assert.equal(await runPanel('document.querySelector("#status").textContent'), 'Work Map launch fixture failed')
+  failWorkMapLaunch = false
+  await runPanel('document.querySelector("#work-map").click()')
+  await until(() => Promise.resolve(workMapRequests.length === 3))
+  results.push('First hover click launches Work Map before hiding; activation blur preserves the click and failures stay visible for retry')
   assert.equal(await runPanel(`(() => {
     const map = document.querySelector('#work-map').getBoundingClientRect()
     const cut = document.querySelector('#floade-cut').getBoundingClientRect()
@@ -180,6 +213,12 @@ try {
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('remote.html'))))
   const remoteWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('remote.html'))
   const runRemote = code => remoteWindow.webContents.executeJavaScript(code)
+  remoteWindow.__qaMinimized = true
+  await launcher.showPanel()
+  await runPanel('document.querySelector("#remote").click()')
+  await until(() => Promise.resolve(remoteWindow.__qaMinimized === false))
+  assert.equal(BrowserWindow.getAllWindows().filter(window => window.webContents.getURL().includes('remote.html')).length, 1)
+  results.push('A single Remote click restores the existing minimized window without creating another window')
   await until(() => runRemote('document.querySelector("#relativeMouseShortcut").value === "Ctrl+Alt"'))
   await until(() => runRemote('document.querySelector("#device-id").textContent === "123456789"'))
   await until(() => runRemote('document.querySelector("#message").textContent.includes("已恢復")'))
@@ -190,6 +229,23 @@ try {
   assert.equal(remoteCalls.filter(call => call.method === 'apply').at(-1).params.settings.relativeMouseShortcut, 'Ctrl+Alt+M')
   await runRemote(`document.querySelector('#reset-relative-shortcut').click(); document.querySelector('#settings-form').requestSubmit()`)
   await until(async () => (await apiCall('remote.settings.get')).result.settings.relativeMouseShortcut === 'Ctrl+Alt')
+  const beforeGamePreset = (await apiCall('remote.settings.get')).result.settings
+  const callsBeforeGamePreset = remoteCalls.length
+  for (const fps of [60, 90, 120]) {
+    await runRemote(`document.querySelector('[data-game-fps="${fps}"]').click()`)
+    assert.deepEqual(await runRemote('["fps", "quality", "codec"].map(id => document.getElementById(id).value)'), [String(fps), '70', 'h264'])
+    assert.deepEqual(await runRemote('["gpu", "hardwareCodec"].map(id => document.getElementById(id).checked)'), [true, true])
+  }
+  assert.deepEqual((await apiCall('remote.settings.get')).result.settings, beforeGamePreset)
+  assert.equal(remoteCalls.slice(callsBeforeGamePreset).some(call => ['apply', 'connect', 'disconnect'].includes(call.method)), false)
+  await runRemote('document.querySelector("#settings-form").requestSubmit()')
+  await until(async () => (await apiCall('remote.settings.get')).result.settings.fps === 120)
+  assert.equal(remoteCalls.filter(call => call.method === 'apply').at(-1).params.settings.fps, 120)
+  const afterGamePreset = (await apiCall('remote.settings.get')).result.settings
+  for (const key of ['connectionMode', 'tcpPunch', 'udpPunch', 'webrtc', 'relativeMouseShortcut']) assert.equal(afterGamePreset[key], beforeGamePreset[key])
+  results.push('Manual 60/90/120 FPS gaming presets require Save and preserve connection and mouse settings')
+  await apiCall('remote.settings.update', { settings: beforeGamePreset })
+  await runRemote('refreshSettings()')
   await runRemote(`document.querySelector('[data-view="connect"]').click()`)
   await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("僅限直連")'))
   assert.equal(await runRemote('Boolean(document.querySelector("#forceRelay, #relayServer"))'), false)
@@ -415,6 +471,9 @@ try {
   await fs.writeFile(file, 'original\n')
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
   const window = [...previewQA.previewWindows.values()][0]
+  window.__qaMinimized = true
+  await previewQA.openMarkdownPreview(temporary, 'sample.md')
+  assert.equal(window.__qaMinimized, false)
   window.webContents.on('preload-error', (_event, _preload, error) => console.error('Preload:', error))
   window.webContents.on('console-message', event => console.error('Renderer:', event.message))
   const run = code => window.webContents.executeJavaScript(code)
@@ -540,6 +599,10 @@ try {
   await runPanel('window.floadeLauncher.action("settings")')
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('settings.html'))))
   const startupWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('settings.html'))
+  startupWindow.__qaMinimized = true
+  await runPanel('window.floadeLauncher.action("settings")')
+  await until(() => Promise.resolve(startupWindow.__qaMinimized === false))
+  results.push('Settings and Markdown entries restore their existing minimized windows in one invocation')
   const runSettings = code => startupWindow.webContents.executeJavaScript(code)
   await until(() => runSettings('Boolean(window.floadeSettings && document.querySelector("#start-at-login").checked)'))
   await runSettings('document.querySelector("#start-at-login").checked = false; document.querySelector("#start-at-login").dispatchEvent(new Event("change"))')

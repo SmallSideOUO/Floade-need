@@ -26,6 +26,14 @@ In 0.1.29, the controller rereads saved remote preferences/devices before reques
 
 ## Local API
 
+### Manual high-speed network / gaming presets (candidate)
+
+Remote settings → Picture and performance offers 60, 90 and 120 FPS buttons. They fill the existing FPS, quality (70), H.264, GPU presentation and hardware codec fields; Save is still required. They preserve transport selection, permissions, credentials and the relative mouse shortcut. Display changes apply to new connections and do not reconnect or alter the established session. Resolution is not changed automatically: choose 1080p on the remote computer first when testing 120 FPS. Actual performance depends on capture, both devices' hardware, display refresh rate, resolution and network.
+
+The corresponding native candidate handles independent mouse-button transitions in both absolute and manual relative mode, including the second button of a left/right chord. The low-latency queue presentation budget follows the requested FPS up to 120 instead of a fixed 16 ms interval. Existing congestion/FPS protection remains active. No game detection or automatic relative-mode switching is added. `remote.metrics` native samples retain `presented_fps` for UI submissions and add `decode_capacity_fps`; neither confirms physical screen refresh or input-to-display latency.
+
+Netflix and other protected video can appear as a black video rectangle while browser controls and the desktop remain visible. Windows Desktop Duplication protects video content from capture ([Microsoft documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/desktop-duplication-api)); FPS, codec and picture-quality settings cannot restore pixels already masked by the operating system. This candidate does not claim protected-video streaming support. Play Netflix directly on the viewing laptop for supported local playback; no browser setting is changed by these presets.
+
 Call api.describe for the authoritative list. remote.settings.get redacts remembered credentials. remote.password.temporary is the explicit operation that reveals the temporary password. Authentication, password checks and local approval remain enforced by RustDesk.
 
 ## Favorite devices (0.1.27)
@@ -115,3 +123,8 @@ Floade keeps one app tray icon; the Windows FloadeRemote profile does not create
 Engine starts share one promise, make at most three launch attempts per round, and use a real 15-second readiness deadline for each launch with short health probes. A background health check every five seconds restores a lost engine; a failed round waits 30 seconds before retrying. Only a process created by a failed startup attempt is terminated. The system service and existing native sessions are never killed as startup cleanup. Explicit remote.shutdown, application quit and update preparation stop supervision.
 
 Native Floade main windows always expose the capability control channel, including when a tray/installer opened the main window without the managed argument. Control-channel bind/publication failures retry within the existing process, endpoint files are atomically replaced, and native commands have a deadline. Remote UI status polling starts independently of engine initialization, and clears its startup message after recovery. remote.status.engine exposes starting/recovering/waiting/ready/blocked state without secrets. Installation/integrity errors still require fixing the installation; automatic recovery does not bypass Windows UAC.
+
+
+## Independent video and input (0.1.38 candidate)
+
+Both Floade endpoints must be updated to negotiate the independent direct P2P video connection after authenticated desktop login. Keyboard/mouse and existing permission checks retain the primary connection. Older peers use the shared legacy transport. `remote.metrics` samples report `video_transport: "independent-p2p"` only after activation; otherwise they report `"shared"`. See [split-video.md](split-video.md) for regression surface and measurement limits. WAN split-video FPS and input-to-display latency have not been verified.
