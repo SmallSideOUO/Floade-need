@@ -47,3 +47,7 @@ call; remote files use offer IDs rather than arbitrary remote disk paths.
 `transfers.list` before retrying; a timeout is not a cancellation. Software-specific project
 discovery, saved-state boundaries, exports, path mapping and imports remain with the calling
 AI and the application's existing APIs. Private Live2D code is not included in Floade.
+
+In 0.1.42, retrying a failed shelf connection closes the native mapping and session without
+waiting indefinitely for the bridge event subscription to cancel. This only changes the
+background shelf cleanup path; desktop sessions and incoming permissions are unchanged.
