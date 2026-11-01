@@ -1,6 +1,9 @@
 # File transfer
 
 The wide **File transfer** button below the translation buttons opens the floating shelf.
+In 0.1.41, use the pin button in the panel header to keep it open while working in Explorer.
+The pin setting is remembered. The two translation actions occupy one compact row, with
+File transfer spanning their combined width immediately below them.
 Drop one or more local files or folders onto the button or shelf. Floade registers their paths;
 the originals stay in place and no file contents are sent at this stage.
 
@@ -13,6 +16,13 @@ Both computers need Floade 0.1.40 or later running. Save the source device with 
 password in Remote settings first. The shelf uses that existing protected credential to open
 an authenticated, encrypted, direct-only P2P tunnel. The file service listens on loopback port
 52961, never a public network interface. It serves only explicitly offered files.
+
+Saved-password origin-key metadata stays DPAPI protected. When available, it allows the same
+Windows account to read an existing credential after switching between a regular desktop
+launch and an MSIX-hosted launch without copying Chromium Local State or revealing passwords.
+`remote.credentials.check` reports readability only, retains validated protected origin-key
+metadata, and does not connect to the peer. The native control endpoint is also published
+under `%USERPROFILE%/.floade/remote` so both launch contexts can reach the same running engine.
 
 Choose **Pause** to retain progress or **Resume** to continue. If a dropped copy was cancelled,
 drag the same source item again: its verified partial data is reused. Source changes stop the

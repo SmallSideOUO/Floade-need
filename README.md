@@ -1,5 +1,7 @@
 # Floade
 
+Version 0.1.41 adds a remembered panel pin for dragging files into Explorer, compact translation buttons with File transfer directly underneath, protected saved-password origin-key metadata, and a shared native-control endpoint across desktop launch contexts.
+
 Version 0.1.40 adds a floating file-transfer shelf: drop multiple files or folders to register their source paths, then drag items from a saved computer's shelf into Explorer on the receiving computer. Transfers use authenticated direct P2P, retain resumable partial data and verify file contents. Both computers need this version running. The same operations are available to AI through `transfers.*`; see [file transfer and API](docs/file-transfer.md). Markdown windows also remember their dimensions separately for each document.
 
 On Windows, **Ctrl + Alt + T** toggles always-on-top for the active window in any app. Change or clear the shortcut in Settings. Quitting Floade restores windows pinned during the session.

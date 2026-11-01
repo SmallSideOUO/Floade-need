@@ -67,6 +67,7 @@ if (process.argv.includes('--work-map')) {
     language: 'system',
     opacity: 1,
     launcherVisible: true,
+    launcherPinned: false,
     startAtLogin: true,
     autoPull: true,
     autoUpdate: true,
@@ -109,6 +110,7 @@ if (process.argv.includes('--work-map')) {
           ? Math.min(1, Math.max(0.4, config.settings.opacity))
           : 1,
         launcherVisible: config.settings?.launcherVisible !== false,
+        launcherPinned: config.settings?.launcherPinned === true,
         startAtLogin: config.settings?.startAtLogin !== false,
         autoPull: config.settings?.autoPull !== false,
         autoUpdate: config.settings?.autoUpdate !== false,
@@ -130,7 +132,7 @@ if (process.argv.includes('--work-map')) {
       }
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', windowPinShortcut: 'CommandOrControl+Alt+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true, autoUpdate: true }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', windowPinShortcut: 'CommandOrControl+Alt+T', language: 'system', opacity: 1, launcherVisible: true, launcherPinned: false, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true, autoUpdate: true }
       recentDocuments = []
       documentWindowSizes = Object.create(null)
       lastAutoPushDate = null
@@ -1155,6 +1157,7 @@ if (process.argv.includes('--work-map')) {
       dataDirectory: app.getPath('userData'), safeStorage,
       runtimeDirectory: app.isPackaged ? path.join(process.resourcesPath, 'remote') : path.join(app.getAppPath(), 'vendor', 'remote', 'windows-x64')
     })
+    void remoteService.dispatch('remote.credentials.check').catch(() => {})
     showRemote = createRemoteWindow({ BrowserWindow, ipcMain, shell, service: remoteService, appPath: app.getAppPath(), icon: windowIconPath, locale: effectiveLocale })
     fileTransfer = createFileTransfer({ dataDirectory: app.getPath('userData'), remote: remoteService.dispatch, changed: () => floatingLauncher?.refreshTransfers() })
     void fileTransfer.start().catch(error => console.warn('Floade file transfer:', error.message))
@@ -1185,7 +1188,7 @@ if (process.argv.includes('--work-map')) {
     tray.setToolTip('Floade')
     floatingLauncher = createFloatingLauncher({
       appPath: app.getAppPath(), iconPath: windowIconPath, getLocale: effectiveLocale, getOpacity: () => settings.opacity,
-      getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition, size: settings.launcherSize }),
+      getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition, size: settings.launcherSize, pinned: settings.launcherPinned }),
       readData: readLauncherData, openDocument: openLauncherDocument, action: launcherAction,
       mutateDocument: mutateLauncherDocument,
       transfer: (method, params) => method === 'devices' ? remoteService.dispatch('remote.settings.get').then(result => ({ devices: result.devices })) : fileTransfer.dispatch(method, params),
@@ -1199,6 +1202,7 @@ if (process.argv.includes('--work-map')) {
       saveVisible: visible => { settings.launcherVisible = visible; saveFolders() },
       savePosition: position => { settings.launcherPosition = position; saveFolders() },
       saveSize: size => { settings.launcherSize = size; saveFolders() },
+      savePinned: pinned => { const previous = settings.launcherPinned; settings.launcherPinned = pinned; try { saveFolders() } catch (error) { settings.launcherPinned = previous; throw error } },
       onVisibilityChange: refreshTrayMenu
     })
     autoPull = createAutoPull({

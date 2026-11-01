@@ -266,6 +266,11 @@ if (isBall) {
   window.floadeLauncher.onFocus(() => { search.focus(); search.select() })
   window.addEventListener('floade-locale-changed', render)
   document.querySelector('#close').addEventListener('click', () => window.floadeLauncher.close())
+  const pinPanel = document.querySelector('#pin-panel')
+  const showPinned = pinned => { pinPanel.setAttribute('aria-pressed', String(pinned)); pinPanel.title = t(pinned ? 'launcher.unpinPanel' : 'launcher.pinPanel') }
+  window.floadeLauncher.onPinned(showPinned)
+  window.addEventListener('floade-locale-changed', () => showPinned(pinPanel.getAttribute('aria-pressed') === 'true'))
+  pinPanel.addEventListener('click', () => { void window.floadeLauncher.pin().catch(error => { status.className = 'error'; status.textContent = error.message }) })
   for (const name of ['add-folder', 'remote', 'text-translate', 'screen-translate', 'work-map', 'floade-cut', 'settings', 'quit']) document.querySelector(`#${name}`).addEventListener('click', () => void perform(name))
   window.addEventListener('keydown', event => {
     if (event.isComposing) return

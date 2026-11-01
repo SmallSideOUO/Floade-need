@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen } from 'electron'
 import path from 'node:path'
 import { ballSize, clampBall, placePanel, containsPoint } from './launcher-layout.mjs'
 
-export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, mutateDocument, action, transfer, dragFiles, transferState, saveVisible, savePosition, saveSize, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
+export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, mutateDocument, action, transfer, dragFiles, transferState, saveVisible, savePosition, saveSize, savePinned = () => {}, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
   let visible = getState().visible
   let keyboardMode = false
   let desiredPanel = false
@@ -16,6 +16,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   let resizing
   let nativeSizing = false
   let interacting = false
+  let pinned = getState().pinned === true
   const initial = getState().position
   const area = screen.getDisplayNearestPoint(initial || cursor()).workArea
   const position = clampBall(initial || { x: area.x + area.width - 84, y: area.y + Math.round(area.height / 2) }, area)
@@ -43,6 +44,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   const panel = createWindow('panel', placePanel(position, area))
   const ballReady = ball.loadFile(path.join(appPath, 'src', 'floating-launcher.html'), { query: { mode: 'ball', lang: getLocale() } })
   const panelReady = panel.loadFile(path.join(appPath, 'src', 'floating-launcher.html'), { query: { mode: 'panel', lang: getLocale() } })
+  void panelReady.then(() => { if (!disposed) panel.webContents.send('launcher:pinned', pinned) })
   void ballReady.then(() => { if (visible && !disposed) ball.showInactive() })
   const fromBall = event => event.sender === ball.webContents
   const fromPanel = event => event.sender === panel.webContents
@@ -88,7 +90,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     clearTimeout(closeTimer)
     clearTimeout(hoverTimer)
     closeTimer = setTimeout(() => {
-      if (disposed || keyboardMode || dragging || resizing || nativeSizing || interacting) return
+      if (disposed || pinned || keyboardMode || dragging || resizing || nativeSizing || interacting) return
       const point = cursor()
       if ((visible && containsPoint(ball.getBounds(), point)) || (desiredPanel && containsPoint(panel.getBounds(), point))) { scheduleClose(); return }
       hidePanel()
@@ -132,6 +134,16 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     }
   })
   handle('launcher:close', event => { if (fromPanel(event)) hidePanel() })
+  handle('launcher:pin', event => {
+    if (!fromPanel(event)) return pinned
+    const next = !pinned
+    savePinned(next)
+    pinned = next
+    clearTimeout(closeTimer)
+    panel.webContents.send('launcher:pinned', pinned)
+    if (!pinned) scheduleClose()
+    return pinned
+  })
   handle('launcher:transfer', async (event, method, params) => {
     if (!fromPanel(event) || !transfer) return { ok: false }
     try { return { ok: true, result: await transfer(method, params) } }
@@ -184,7 +196,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     if (!fromPanel(event)) return { ok: false }
     try {
       const result = await openDocument(document)
-      if (result) hidePanel()
+      if (result && !pinned) hidePanel()
       return { ok: Boolean(result) }
     } catch (error) { return { ok: false, message: error.message } }
   })
@@ -192,7 +204,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     if (!fromPanel(event)) return { ok: false }
     try {
       const pending = action(name, folderPath)
-      if (name !== 'push') hidePanel()
+      if (name !== 'push' && !pinned) hidePanel()
       await pending
       return { ok: true }
     } catch (error) {
@@ -208,7 +220,7 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   })
   panel.on('focus', () => { if (desiredPanel) { keyboardMode = true; clearTimeout(closeTimer) } })
   panel.on('blur', () => {
-    if (keyboardMode && !interacting && !resizing && !nativeSizing) {
+    if (!pinned && keyboardMode && !interacting && !resizing && !nativeSizing) {
       if (containsPoint(panel.getBounds(), cursor())) { keyboardMode = false; scheduleClose() }
       else hidePanel()
     }

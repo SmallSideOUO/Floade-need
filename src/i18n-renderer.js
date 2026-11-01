@@ -2,6 +2,8 @@
   const messages = {
     en: {
       'launcher.fileTransfer': 'File transfer',
+      'launcher.pinPanel': 'Keep this panel open while dragging files',
+      'launcher.unpinPanel': 'Unpin this panel',
       'settings.windowPinShortcut': 'Always on top shortcut',
       'settings.windowPinShortcutDescription': 'Pin the active window from any app; press again to unpin. Default: Ctrl + Alt + T. Change it here. Quitting Floade restores windows pinned during this session.',
       'launcher.remote': 'Remote', 'settings.remoteDescription': 'Device code, passwords, permissions, picture quality and servers.', 'settings.openRemote': 'Remote settings',
@@ -44,6 +46,8 @@
     },
     'zh-TW': {
       'launcher.fileTransfer': '檔案傳輸',
+      'launcher.pinPanel': '釘選浮窗，拖曳檔案時保持開啟',
+      'launcher.unpinPanel': '取消釘選浮窗',
       'settings.windowPinShortcut': '視窗置頂快捷鍵',
       'settings.windowPinShortcutDescription': '將目前操作的任何視窗置頂，再按一次取消。預設 Ctrl + Alt + T，可在此改鍵。結束 Floade 時會取消本次設定的置頂。',
       'launcher.remote': '遠端', 'settings.remoteDescription': '裝置代碼、密碼、權限、畫面品質與伺服器。', 'settings.openRemote': '遠端設定',

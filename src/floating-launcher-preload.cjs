@@ -3,6 +3,8 @@ contextBridge.exposeInMainWorld('floadeLauncher', {
   hover: entered => ipcRenderer.invoke('launcher:hover', entered),
   drag: phase => ipcRenderer.invoke('launcher:drag', phase),
   close: () => ipcRenderer.invoke('launcher:close'),
+  pin: () => ipcRenderer.invoke('launcher:pin'),
+  onPinned: callback => ipcRenderer.on('launcher:pinned', (_event, pinned) => callback(pinned)),
   resize: height => ipcRenderer.invoke('launcher:resize', height),
   sizeDrag: phase => ipcRenderer.invoke('launcher:size-drag', phase),
   interacting: value => ipcRenderer.invoke('launcher:interacting', value),

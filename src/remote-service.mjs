@@ -1,6 +1,6 @@
 import { createEngineSupervisor } from './remote-engine-supervisor.mjs'
 import { createAutoConnector } from './remote-auto-connect.mjs'
-import { recoverRemoteProfile, remoteProfileSources } from './remote-profile.mjs'
+import { recoverRemoteProfile, remoteProfileSources, readRemoteCredential } from './remote-profile.mjs'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn, execFile } from 'node:child_process'
@@ -23,6 +23,7 @@ export const remoteMethods = {
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
   'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
   'remote.transfer.open': { description: 'Open/reuse an authenticated direct-only background tunnel to a saved device file shelf. Uses its existing protected credential.', params: { deviceId: 'saved numeric device code' } },
+  'remote.credentials.check': { description: 'Check saved-password readability and retain its DPAPI-wrapped origin key when available. Does not connect or return passwords or keys.', params: { deviceId: 'optional saved numeric device code' } },
   'remote.connection.cancel': { description: 'Stop automatic connection attempts and close its session.', params: {} },
   'remote.disconnect': { description: 'Close one native session window.', params: { windowId: 'integer from remote.status' } },
   'remote.preview': { description: 'Switch an existing Windows desktop session to a view-only, always-on-top preview without reconnecting.', params: { windowId: 'integer from remote.status', action: 'open (default), restore, collapse or status' } },
@@ -72,6 +73,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     if (recoveryError) fail('REMOTE_PROFILE_RECOVERY_FAILED', 'Saved remote devices could not be recovered. Original data is preserved; do not replace the saved passwords.')
   }
   const controlFile = path.join(process.env.APPDATA || dataDirectory, 'FloadeRemote', 'control.json')
+  const canonicalControlFile = process.platform === 'win32' && process.env.USERPROFILE ? path.join(process.env.USERPROFILE, '.floade', 'remote', 'control.json') : controlFile
   const executable = path.join(runtimeDirectory, 'FloadeRemote.exe')
   let state = { settings: { ...defaults }, devices: [] }
   const reload = () => {
@@ -109,6 +111,18 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     }
     return previous?.credential
   }
+  function savedPassword(device) {
+    const result = readRemoteCredential(device, file, safeStorage)
+    if (result.credentialKey && result.credentialKey !== device.credentialKey) {
+      try {
+        const backup = `${file}.credential-backup`
+        if (!fs.existsSync(backup)) fs.copyFileSync(file, backup, fs.constants.COPYFILE_EXCL)
+        save(current => ({ ...current, devices: current.devices.map(item => item.deviceId === device.deviceId && item.credential === device.credential ? { ...item, credentialKey: result.credentialKey } : item) }))
+        device.credentialKey = result.credentialKey
+      } catch { console.warn('Floade remote: origin-key metadata could not be retained; the saved password was not changed.') }
+    }
+    return result.password
+  }
   function withDevice(device) {
     const others = state.devices.filter(d => d.deviceId !== device.deviceId)
     if (isFavorite(device) && others.filter(isFavorite).length >= 50) fail('INVALID_PARAMS', 'At most 50 favorite devices may be saved.')
@@ -118,7 +132,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
   async function call(method, params = {}, timeout = 15000) {
     if (engineCall) return engineCall(method, params)
     let endpoint
-    try { endpoint = JSON.parse(fs.readFileSync(controlFile, 'utf8')) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine is not running.') }
+    try { endpoint = JSON.parse(fs.readFileSync(fs.existsSync(canonicalControlFile) ? canonicalControlFile : controlFile, 'utf8')) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine is not running.') }
     if (!Number.isInteger(endpoint.port) || endpoint.port < 1 || endpoint.port > 65535 || typeof endpoint.token !== 'string') fail('REMOTE_NOT_RUNNING', 'Invalid remote engine endpoint.')
     if (!Number.isInteger(endpoint.pid) || endpoint.pid <= 0) fail('REMOTE_NOT_RUNNING', 'Invalid remote engine process.')
     try { process.kill(endpoint.pid, 0) } catch { fail('REMOTE_NOT_RUNNING', 'Remote engine process has stopped.') }
@@ -210,7 +224,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
     return { available: samples.size > 0, delayMeaning: 'shared-channel probe and processing; not input-to-display latency', samples: [...samples.values()] }
   }
   async function dispatch(method, p = {}) {
-    if (['remote.settings.get', 'remote.settings.update', 'remote.devices.save', 'remote.devices.forget', 'remote.connect'].includes(method)) requireRecoveredProfile()
+    if (['remote.settings.get', 'remote.settings.update', 'remote.devices.save', 'remote.devices.forget', 'remote.connect', 'remote.credentials.check'].includes(method)) requireRecoveredProfile()
     reload()
     if (method === 'remote.service.status') return windowsService.status()
     if (method === 'remote.service.install') {
@@ -234,6 +248,14 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       return call('accessSet', { enabled: method === 'remote.access.disable' ? false : true, devices })
     }
     if (method === 'remote.settings.get') return publicState()
+    if (method === 'remote.credentials.check') {
+      const id = p.deviceId === undefined ? null : deviceCode(p.deviceId)
+      return { devices: state.devices.filter(device => !id || device.deviceId === id).map(device => {
+        let readable = false
+        if (device.credential && safeStorage?.isEncryptionAvailable()) try { savedPassword(device); readable = true } catch {}
+        return { deviceId: device.deviceId, hasPassword: Boolean(device.credential), readable }
+      }) }
+    }
     if (method === 'remote.metrics') return readMetrics()
     if (method === 'remote.status') {
       try { return { available: true, running: true, ...await call('status', {}, 1500), engine: engine.snapshot(), automatic: automatic.snapshot() } } catch (error) {
@@ -267,7 +289,9 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const device = { ...previous, deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? true,
         ...(previous?.lastUsed ? { lastUsed: previous.lastUsed } : {}), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
       if (!credential) delete device.credential
+      if (credential !== previous?.credential) delete device.credentialKey
       save(current => ({ ...current, devices: withDevice(device) }))
+      if (device.credential) try { savedPassword(device) } catch {}
       return publicState()
     }
     if (method === 'remote.connect') {
@@ -277,12 +301,13 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       let password = p.password
       if (!password && previous?.credential) {
         if (!safeStorage?.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Windows protected storage is unavailable.')
-        try { password = safeStorage.decryptString(Buffer.from(previous.credential, 'base64')) }
+        try { password = savedPassword(previous) }
         catch { fail('CREDENTIAL_UNAVAILABLE', 'Saved password cannot be read on this Windows account; update the device password.') }
       }
       const credential = protectedCredential({ ...p, password }, previous)
       const device = { ...previous, deviceId: id, alias: p.alias ?? previous?.alias ?? '', favorite: p.favorite ?? (previous ? isFavorite(previous) : Boolean(p.remember)), lastUsed: new Date().toISOString(), ...(previous?.connectionProfile ? { connectionProfile: previous.connectionProfile } : {}), ...(credential ? { credential } : {}) }
       if (!credential) delete device.credential
+      if (credential !== previous?.credential) delete device.credentialKey
       withDevice(device) // Validate the favorite limit before opening a session.
       if (automatic.active) fail('REMOTE_BUSY', 'Stop the current automatic connection before opening another session.')
       let result
@@ -291,6 +316,7 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
         result = await automatic.connect({ deviceId: id, password, mode, preferred: previous?.connectionProfile, history: previous?.connectionStats?.[mode] })
       } else { await start(); result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings }) }
       save(current => ({ ...current, devices: withDevice(device) }))
+      if (device.credential) try { savedPassword(device) } catch {}
       return { ...result, deviceId: id, remembered: Boolean(credential) }
     }
     if (method === 'remote.transfer.open') {
@@ -299,8 +325,8 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       const saved = state.devices.find(device => device.deviceId === id)
       if (!saved?.credential || !safeStorage?.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Save this device with its permanent password in Remote settings first.')
       let password
-      try { password = safeStorage.decryptString(Buffer.from(saved.credential, 'base64')) }
-      catch { fail('CREDENTIAL_UNAVAILABLE', 'This device password cannot be read on this Windows account.') }
+      try { password = savedPassword(saved) }
+      catch { fail('CREDENTIAL_UNAVAILABLE', 'The saved password could not be read. Edit this device in Remote settings and save its permanent password again. Existing data was kept.') }
       await start()
       const status = await call('status')
       if (status.fileTransferShelf !== true) fail('REMOTE_UPDATE_REQUIRED', 'The remote engine needs the file-transfer update.')

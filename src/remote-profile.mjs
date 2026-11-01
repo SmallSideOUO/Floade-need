@@ -10,6 +10,41 @@ function unprotectKey(encrypted) {
     { input: encrypted.toString('base64'), encoding: 'utf8', windowsHide: true, timeout: 15000 }).trim(), 'base64')
 }
 
+function readWithProtectedKey(encrypted, encodedKey, unwrap) {
+  const wrapped = Buffer.from(encodedKey, 'base64')
+  if (wrapped.length > 16384 || wrapped.subarray(0, 5).toString() !== 'DPAPI' || encrypted.subarray(0, 3).toString() !== 'v10' || encrypted.length < 31) throw new Error('Unsupported saved credential key.')
+  const key = unwrap(wrapped.subarray(5))
+  let plaintext
+  try {
+    const decipher = createDecipheriv('aes-256-gcm', key, encrypted.subarray(3, 15))
+    decipher.setAuthTag(encrypted.subarray(-16))
+    plaintext = Buffer.concat([decipher.update(encrypted.subarray(15, -16)), decipher.final()])
+    return plaintext.toString('utf8')
+  } finally { key.fill(0); plaintext?.fill(0) }
+}
+
+// Retain the DPAPI-wrapped origin key with a credential so an MSIX/non-MSIX
+// launch can read it without replacing either profile's Chromium Local State.
+export function readRemoteCredential(device, source, safeStorage, unwrap = unprotectKey) {
+  const encrypted = Buffer.from(device.credential, 'base64')
+  let password
+  try { password = safeStorage.decryptString(encrypted) }
+  catch (error) {
+    if (!device.credentialKey) throw error
+    password = readWithProtectedKey(encrypted, device.credentialKey, unwrap)
+    return { password, credentialKey: device.credentialKey }
+  }
+  let credentialKey = device.credentialKey
+  if (encrypted.subarray(0, 3).toString() === 'v10') {
+    try {
+      const localState = JSON.parse(fs.readFileSync(path.join(path.dirname(source), 'Local State'), 'utf8'))
+      const candidate = localState.os_crypt?.encrypted_key
+      if (candidate && candidate !== credentialKey && readWithProtectedKey(encrypted, candidate, unwrap) === password) credentialKey = candidate
+    } catch { /* A successful native decrypt remains usable even if key metadata cannot be retained. */ }
+  }
+  return { password, credentialKey }
+}
+
 export function migrateRemoteCredentials(stored, source, safeStorage, unwrap = unprotectKey) {
   let key
   try {
