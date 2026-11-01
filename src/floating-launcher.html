@@ -16,9 +16,18 @@
         <button id="remote" type="button"><span aria-hidden="true">↗</span><small data-i18n="launcher.remote">遠端</small></button>
         <button id="text-translate" type="button"><span aria-hidden="true">文</span><small data-i18n="launcher.translate">文字翻譯</small></button>
         <button id="screen-translate" type="button"><span aria-hidden="true">⌗</span><small data-i18n="launcher.screenTranslate">框選翻譯</small></button>
+        <button id="file-transfer" type="button" aria-expanded="false"><span aria-hidden="true">⇄</span><small data-i18n="launcher.fileTransfer">檔案傳輸</small></button>
         <button id="work-map" type="button"><span aria-hidden="true"><img src="../assets/tray.png" alt=""></span><small>Work Map</small></button>
         <button id="floade-cut" type="button"><span aria-hidden="true">✂</span><small>FloadeCut</small></button>
       </div>
+      <section id="transfer-pane" hidden>
+        <div class="transfer-toolbar"><label for="transfer-device">來源電腦</label><select id="transfer-device"><option value="local">這台電腦</option></select><button id="transfer-refresh" type="button">重新整理</button></div>
+        <div id="transfer-drop" tabindex="0">把檔案或資料夾拖到這裡<br><small>支援多檔；加入清單後仍留在來源電腦</small></div>
+        <p id="transfer-status" aria-live="polite"></p>
+        <div id="transfer-offers" role="list"></div>
+        <p class="transfer-hint">在接收電腦開好資料夾，再把清單中的檔案拖進去。</p>
+        <div id="transfer-jobs" aria-live="polite"></div>
+      </section>
       <div class="search-row"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m20 20-5-5m2-5a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"/></svg><input id="search" type="search" autocomplete="off" data-i18n-placeholder="launcher.search" data-i18n-aria="launcher.search"></div>
       <div class="list-heading"><span id="list-heading" data-i18n="launcher.folders">資料夾</span><small id="document-count"></small></div>
       <div id="items"><div id="folders"></div><div id="documents"></div></div>
@@ -29,5 +38,6 @@
     <button id="resize-grip" type="button" hidden data-i18n-title="launcher.resize" data-i18n-aria="launcher.resize">◢</button>
     <script src="./i18n-renderer.js"></script>
     <script src="./floating-launcher.js"></script>
+    <script src="./file-transfer-ui.js"></script>
   </body>
 </html>

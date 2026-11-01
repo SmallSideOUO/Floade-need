@@ -22,6 +22,7 @@ export const remoteMethods = {
   'remote.password.set': { description: 'Set this device permanent password, or empty string to clear it.', params: { password: 'write-only string, at least 8 characters' } },
   'remote.password.temporary': { description: 'Explicitly reveal this device temporary password.', params: {} },
   'remote.connect': { description: 'Open a branded native remote window. Reuses saved credentials; permissions are set by the receiving host.', params: { deviceId: 'numeric device code', password: 'optional write-only credential', remember: 'optional boolean', favorite: 'optional boolean', alias: 'optional name', mode: 'desktop or files' } },
+  'remote.transfer.open': { description: 'Open/reuse an authenticated direct-only background tunnel to a saved device file shelf. Uses its existing protected credential.', params: { deviceId: 'saved numeric device code' } },
   'remote.connection.cancel': { description: 'Stop automatic connection attempts and close its session.', params: {} },
   'remote.disconnect': { description: 'Close one native session window.', params: { windowId: 'integer from remote.status' } },
   'remote.preview': { description: 'Switch an existing Windows desktop session to a view-only, always-on-top preview without reconnecting.', params: { windowId: 'integer from remote.status', action: 'open (default), restore, collapse or status' } },
@@ -291,6 +292,19 @@ export function createRemoteService({ dataDirectory, runtimeDirectory, safeStora
       } else { await start(); result = await call('connect', { deviceId: id, password, mode: p.mode || 'desktop', settings: state.settings }) }
       save(current => ({ ...current, devices: withDevice(device) }))
       return { ...result, deviceId: id, remembered: Boolean(credential) }
+    }
+    if (method === 'remote.transfer.open') {
+      requireRecoveredProfile()
+      const id = deviceCode(p.deviceId)
+      const saved = state.devices.find(device => device.deviceId === id)
+      if (!saved?.credential || !safeStorage?.isEncryptionAvailable()) fail('CREDENTIAL_UNAVAILABLE', 'Save this device with its permanent password in Remote settings first.')
+      let password
+      try { password = safeStorage.decryptString(Buffer.from(saved.credential, 'base64')) }
+      catch { fail('CREDENTIAL_UNAVAILABLE', 'This device password cannot be read on this Windows account.') }
+      await start()
+      const status = await call('status')
+      if (status.fileTransferShelf !== true) fail('REMOTE_UPDATE_REQUIRED', 'The remote engine needs the file-transfer update.')
+      return call('transferTunnel', { deviceId: id, password })
     }
     if (method === 'remote.password.set') {
       if (typeof p.password !== 'string' || (p.password.length > 0 && p.password.length < 8) || p.password.length > 256) fail('INVALID_PARAMS', 'Use at least 8 characters, or empty string to clear.')

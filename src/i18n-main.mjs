@@ -1,5 +1,9 @@
 const messages = {
   en: {
+    'windowPin.enabled': 'Window pinned on top',
+    'windowPin.disabled': 'Window unpinned',
+    'windowPin.failed': 'Window pin failed',
+    'windowPin.failedMessage': 'Select a normal window and try again. Windows may block changes to apps running as administrator.',
     'floadeCut.notInstalled': 'FloadeCut could not be found. Install Floade Cut and try again.',
     'floadeCut.launchFailed': 'Could not open FloadeCut: {message}',
     'preview.imageFailed': 'Could not save the image beside this Markdown file.',
@@ -63,6 +67,10 @@ const messages = {
     'language.ru': 'Russian'
   },
   'zh-TW': {
+    'windowPin.enabled': '視窗已置頂',
+    'windowPin.disabled': '已取消視窗置頂',
+    'windowPin.failed': '視窗置頂失敗',
+    'windowPin.failedMessage': '請先選取一般視窗再試一次。Windows 可能不允許變更以系統管理員執行的視窗。',
     'floadeCut.notInstalled': '找不到 FloadeCut，請先安裝 Floade Cut 再重試。',
     'floadeCut.launchFailed': '無法開啟 FloadeCut：{message}',
     'preview.imageFailed': '無法將圖片儲存到 Markdown 旁的資料夾。',

@@ -36,6 +36,15 @@ const recorders = [
     clear: document.querySelector('#clear-translation-shortcut'),
     save: shortcut => window.floadeSettings.setTranslationShortcut(shortcut),
     current: null
+  },
+  {
+    button: document.querySelector('#window-pin-record'),
+    value: document.querySelector('#window-pin-shortcut-value'),
+    hint: document.querySelector('#window-pin-shortcut-hint'),
+    status: document.querySelector('#window-pin-shortcut-status'),
+    clear: document.querySelector('#clear-window-pin-shortcut'),
+    save: shortcut => window.floadeSettings.setWindowPinShortcut(shortcut),
+    current: null
   }
 ]
 
@@ -167,6 +176,7 @@ function updateOpacityDisplay() {
 window.floadeSettings.onState(state => {
   recorders[0].current = state.shortcut
   recorders[1].current = state.translationShortcut
+  recorders[2].current = state.windowPinShortcut
   opacityInput.value = String(Math.round(state.opacity * 100))
   languageSelect.value = state.language || 'system'
   startupInput.checked = state.startAtLogin !== false

@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { remoteMethods } from './remote-service.mjs'
+import { transferMethods } from './file-transfer.mjs'
 
 const methods = {
   'api.describe': { description: 'Describe the local API.', params: {} },
@@ -13,8 +14,8 @@ const writable = permission => ['ADMIN', 'MAINTAIN', 'WRITE'].includes(permissio
 const normalizedPath = value => process.platform === 'win32' ? path.resolve(value).toLowerCase() : path.resolve(value)
 function fail(code, message, details = {}) { throw Object.assign(new Error(message), { apiCode: code, details }) }
 
-export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false, getAppStatus = () => ({}), remote }) {
-  const supportedMethods = remote ? { ...methods, ...remoteMethods } : methods
+export function createLocalApi({ getFolders, command, saveLink, refresh, busyFolders, isPushing = () => false, getAppStatus = () => ({}), remote, transfer }) {
+  const supportedMethods = { ...methods, ...(remote ? remoteMethods : {}), ...(transfer ? transferMethods : {}) }
   const isBusy = folderPath => busyFolders.has(folderPath) || isPushing(folderPath)
   async function github(args) {
     try { return await command('gh', args) } catch (error) {
@@ -28,6 +29,7 @@ export function createLocalApi({ getFolders, command, saveLink, refresh, busyFol
   async function dispatch(method, params) {
     if (method === 'api.describe') return { apiVersion: 1, transport: 'newline-delimited JSON over local control pipe', methods: supportedMethods }
     if (method.startsWith('remote.') && remote) return remote(method, params)
+    if (method.startsWith('transfers.') && transfer) return transfer(method, params)
     if (method === 'app.status') return getAppStatus()
     if (method === 'folders.list') return { folders: getFolders().map(folder => ({
       path: folder.path, repo: folder.repo, exists: fs.existsSync(folder.path), busy: isBusy(folder.path)

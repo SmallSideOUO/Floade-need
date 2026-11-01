@@ -20,6 +20,9 @@ import { openWorkMap } from './work-map.mjs'
 import { openFloadeCut } from './floade-cut.mjs'
 import { createRemoteService } from './remote-service.mjs'
 import { createRemoteWindow } from './remote-window.mjs'
+import { createWindowPin } from './window-pin.mjs'
+import { createFileTransfer } from './file-transfer.mjs'
+import { createFileDrag } from './file-drag.mjs'
 
 const execFileAsync = promisify(execFile)
 
@@ -39,15 +42,20 @@ if (process.argv.includes('--work-map')) {
   let settingsWindow
   let registeredShortcut
   let registeredTranslationShortcut
+  let registeredWindowPinShortcut
+  let windowPin
   let screenTranslator
   let autoPull
   let appUpdates
   let remoteService
   let showRemote
+  let fileTransfer
+  let fileDrag
   let quitting = false
   const pullingFolders = new Set()
   let floatingLauncher
   let recentDocuments = []
+  let documentWindowSizes = Object.create(null)
   let documentIndex = { signature: '', updated: 0, documents: [] }
   let documentScan
   let autoPushTimer
@@ -55,6 +63,7 @@ if (process.argv.includes('--work-map')) {
   let settings = {
     shortcut: null,
     translationShortcut: 'Alt+Shift+T',
+    windowPinShortcut: 'CommandOrControl+Alt+T',
     language: 'system',
     opacity: 1,
     launcherVisible: true,
@@ -87,6 +96,8 @@ if (process.argv.includes('--work-map')) {
             .filter(folder => typeof folder.path === 'string')
         : []
       settings = {
+        windowPinShortcut: config.settings?.windowPinShortcut === null ? null
+          : typeof config.settings?.windowPinShortcut === 'string' ? config.settings.windowPinShortcut : 'CommandOrControl+Alt+T',
         shortcut: typeof config.settings?.shortcut === 'string' ? config.settings.shortcut : null,
         translationShortcut: typeof config.settings?.translationShortcut === 'string'
           ? config.settings.translationShortcut
@@ -109,10 +120,19 @@ if (process.argv.includes('--work-map')) {
       lastAutoPushDate = typeof config.lastAutoPushDate === 'string' ? config.lastAutoPushDate : null
       recentDocuments = Array.isArray(config.recentDocuments) ? config.recentDocuments.filter(file =>
         typeof file?.folderPath === 'string' && typeof file?.relativePath === 'string' && Number.isFinite(file?.lastOpened)).slice(0, 30) : []
+      documentWindowSizes = Object.create(null)
+      if (config.documentWindowSizes && typeof config.documentWindowSizes === 'object' && !Array.isArray(config.documentWindowSizes)) {
+        for (const [key, size] of Object.entries(config.documentWindowSizes)) {
+          if (Number.isFinite(size?.width) && size.width >= 320 && Number.isFinite(size?.height) && size.height >= 260) {
+            documentWindowSizes[key] = { width: Math.round(size.width), height: Math.round(size.height) }
+          }
+        }
+      }
     } catch {
       folders = []
-      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true, autoUpdate: true }
+      settings = { shortcut: null, translationShortcut: 'Alt+Shift+T', windowPinShortcut: 'CommandOrControl+Alt+T', language: 'system', opacity: 1, launcherVisible: true, launcherPosition: null, launcherSize: null, startAtLogin: true, autoPull: true, autoUpdate: true }
       recentDocuments = []
+      documentWindowSizes = Object.create(null)
       lastAutoPushDate = null
     }
   }
@@ -121,7 +141,7 @@ if (process.argv.includes('--work-map')) {
     fs.mkdirSync(path.dirname(configFile), { recursive: true })
     const temporary = `${configFile}.tmp`
     try {
-      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate, recentDocuments }, null, 2)}\n`, 'utf8')
+      fs.writeFileSync(temporary, `${JSON.stringify({ folders, settings, lastAutoPushDate, recentDocuments, documentWindowSizes }, null, 2)}\n`, 'utf8')
       fs.renameSync(temporary, configFile)
     } catch (error) {
       try { fs.unlinkSync(temporary) } catch {}
@@ -273,14 +293,20 @@ if (process.argv.includes('--work-map')) {
     const key = process.platform === 'win32' ? filePath.toLowerCase() : filePath
     const existingWindow = previewWindows.get(key)
     if (existingWindow && !existingWindow.isDestroyed()) {
+      if (existingWindow.isMinimized()) existingWindow.restore()
       existingWindow.show()
       existingWindow.focus()
       return
     }
 
+    const savedSize = documentWindowSizes[key] || { width: 820, height: 560 }
+    const area = screen.getPrimaryDisplay().workAreaSize
+    const restoredSize = {
+      width: Math.max(320, Math.min(savedSize.width, area.width)),
+      height: Math.max(260, Math.min(savedSize.height, area.height))
+    }
     const window = new BrowserWindow({
-      width: 820,
-      height: 560,
+      ...restoredSize,
       icon: windowIconPath(),
       opacity: settings.opacity,
       minWidth: 320,
@@ -299,12 +325,45 @@ if (process.argv.includes('--work-map')) {
       }
     })
 
+    // Windows can add resize borders at fractional display scales. Compensate
+    // before showing so reopening does not grow the saved width each time.
+    const requestedSize = { ...restoredSize }
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const actualSize = window.getBounds()
+      if (actualSize.width === restoredSize.width && actualSize.height === restoredSize.height) break
+      requestedSize.width += restoredSize.width - actualSize.width
+      requestedSize.height += restoredSize.height - actualSize.height
+      window.setSize(Math.max(1, requestedSize.width), Math.max(1, requestedSize.height))
+    }
     const webContentsId = window.webContents.id
     previewLocations.set(webContentsId, { folderPath, relativePath })
     window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
     window.webContents.on('will-navigate', event => event.preventDefault())
     previewWindows.set(key, window)
+    let sizeTimer
+    let sizeSaveAttempts = 0
+    const rememberSize = () => {
+      clearTimeout(sizeTimer)
+      if (window.isDestroyed() || window.isMinimized() || window.isFullScreen()) return
+      const { width, height } = window.getNormalBounds()
+      const previous = documentWindowSizes[key]
+      if (previous?.width === width && previous?.height === height) return
+      documentWindowSizes[key] = { width, height }
+      try { saveFolders(); sizeSaveAttempts = 0 } catch (error) {
+        if (previous) documentWindowSizes[key] = previous
+        else delete documentWindowSizes[key]
+        if (sizeSaveAttempts++ < 3) sizeTimer = setTimeout(rememberSize, 300)
+        else console.warn('Floade document window size:', error.message)
+      }
+    }
+    window.on('resize', () => {
+      clearTimeout(sizeTimer)
+      sizeSaveAttempts = 0
+      sizeTimer = setTimeout(rememberSize, 250)
+    })
+    window.on('close', rememberSize)
     window.on('closed', () => {
+      clearTimeout(sizeTimer)
       previewWindows.delete(key)
       previewFiles.get(webContentsId)?.dispose()
       previewFiles.delete(webContentsId)
@@ -363,6 +422,7 @@ if (process.argv.includes('--work-map')) {
 
     const existingPicker = [...previewPickers.values()].find(picker => picker.folderPath === folder.path)
     if (existingPicker && !existingPicker.window.isDestroyed()) {
+      if (existingPicker.window.isMinimized()) existingPicker.window.restore()
       existingPicker.window.show()
       existingPicker.window.focus()
       return
@@ -496,6 +556,32 @@ if (process.argv.includes('--work-map')) {
     }
   }
 
+  async function toggleForegroundWindowPin() {
+    try {
+      const result = await windowPin.toggle()
+      if (result) showToast(tr(result.pinned ? 'windowPin.enabled' : 'windowPin.disabled'), result.title, 'success')
+    } catch {
+      showToast(tr('windowPin.failed'), tr('windowPin.failedMessage'), 'error')
+    }
+  }
+
+  function setWindowPinShortcut(shortcut) {
+    const previous = registeredWindowPinShortcut
+    if (previous) globalShortcut.unregister(previous)
+    registeredWindowPinShortcut = undefined
+    let registered = false
+    try { registered = !shortcut || (process.platform === 'win32' && globalShortcut.register(shortcut, toggleForegroundWindowPin)) } catch {}
+    if (registered) {
+      registeredWindowPinShortcut = shortcut || undefined
+      settings.windowPinShortcut = shortcut || null
+      saveFolders()
+      if (shortcut) void windowPin.start().catch(() => showToast(tr('windowPin.failed'), tr('windowPin.failedMessage'), 'error'))
+      return { success: true, shortcut: settings.windowPinShortcut }
+    }
+    if (previous && globalShortcut.register(previous, toggleForegroundWindowPin)) registeredWindowPinShortcut = previous
+    return { success: false, shortcut: settings.windowPinShortcut, message: tr('shortcut.conflict') }
+  }
+
   function setGlobalOpacity(value) {
     const opacity = Math.min(1, Math.max(0.4, Number(value) || 1))
     settings.opacity = opacity
@@ -523,6 +609,7 @@ if (process.argv.includes('--work-map')) {
 
   function showSettings() {
     if (settingsWindow && !settingsWindow.isDestroyed()) {
+      if (settingsWindow.isMinimized()) settingsWindow.restore()
       settingsWindow.show()
       settingsWindow.focus()
       return
@@ -616,6 +703,11 @@ if (process.argv.includes('--work-map')) {
     ipcMain.handle('settings:set-translation-shortcut', (event, shortcut) => {
       if (event.sender !== settingsWindow?.webContents) return { success: false }
       return setTranslationShortcut(typeof shortcut === 'string' ? shortcut : null)
+    })
+
+    ipcMain.handle('settings:set-window-pin-shortcut', (event, shortcut) => {
+      if (event.sender !== settingsWindow?.webContents) return { success: false }
+      return setWindowPinShortcut(typeof shortcut === 'string' ? shortcut : null)
     })
 
     ipcMain.handle('settings:set-opacity', (event, opacity) => {
@@ -1041,6 +1133,7 @@ if (process.argv.includes('--work-map')) {
     if (process.platform === 'win32') app.setAppUserModelId('com.smallside.floade')
     configFile = path.join(app.getPath('userData'), 'folders.json')
     loadFolders()
+    windowPin = createWindowPin({ appPath: app.getAppPath() })
     screenTranslator = createScreenTranslator({
       appPath: app.getAppPath(),
       userDataPath: app.getPath('userData'),
@@ -1063,8 +1156,13 @@ if (process.argv.includes('--work-map')) {
       runtimeDirectory: app.isPackaged ? path.join(process.resourcesPath, 'remote') : path.join(app.getAppPath(), 'vendor', 'remote', 'windows-x64')
     })
     showRemote = createRemoteWindow({ BrowserWindow, ipcMain, shell, service: remoteService, appPath: app.getAppPath(), icon: windowIconPath, locale: effectiveLocale })
+    fileTransfer = createFileTransfer({ dataDirectory: app.getPath('userData'), remote: remoteService.dispatch, changed: () => floatingLauncher?.refreshTransfers() })
+    void fileTransfer.start().catch(error => console.warn('Floade file transfer:', error.message))
+    const dragReady = createFileDrag({ appPath: app.getAppPath(), dataDirectory: app.getPath('userData'), transfer: fileTransfer })
+    void dragReady.then(provider => { fileDrag = provider }).catch(error => console.warn('Floade drag provider:', error.message))
     const localApi = createLocalApi({
       remote: remoteService.dispatch,
+      transfer: fileTransfer.dispatch,
       getAppStatus: () => ({ version: app.getVersion(), channel: 'stable', updates: appUpdates?.state() }),
       getFolders: () => folders,
       command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 }),
@@ -1090,6 +1188,14 @@ if (process.argv.includes('--work-map')) {
       getState: () => ({ visible: settings.launcherVisible, position: settings.launcherPosition, size: settings.launcherSize }),
       readData: readLauncherData, openDocument: openLauncherDocument, action: launcherAction,
       mutateDocument: mutateLauncherDocument,
+      transfer: (method, params) => method === 'devices' ? remoteService.dispatch('remote.settings.get').then(result => ({ devices: result.devices })) : fileTransfer.dispatch(method, params),
+      transferState: fileTransfer.list,
+      dragFiles: async (deviceId, offerIds, window) => {
+        if (!Array.isArray(offerIds) || !offerIds.length) throw new Error('Select files to drag.')
+        if (deviceId === 'local') return window.webContents.startDrag({ files: fileTransfer.localPaths(offerIds), icon: nativeImage.createFromPath(windowIconPath()) })
+        await dragReady
+        return fileDrag.start(deviceId, offerIds)
+      },
       saveVisible: visible => { settings.launcherVisible = visible; saveFolders() },
       savePosition: position => { settings.launcherPosition = position; saveFolders() },
       saveSize: size => { settings.launcherSize = size; saveFolders() },
@@ -1118,9 +1224,15 @@ if (process.argv.includes('--work-map')) {
       const result = setTranslationShortcut(settings.translationShortcut)
       if (!result.success) showToast(tr('translationShortcut.failed'), result.message, 'error')
     }
+    if (process.platform === 'win32' && settings.windowPinShortcut) {
+      const result = setWindowPinShortcut(settings.windowPinShortcut)
+      if (!result.success) showToast(tr('windowPin.failed'), result.message, 'error')
+    }
   })
 
   app.on('before-quit', () => {
+    void fileTransfer?.dispose()
+    windowPin?.dispose()
     remoteService?.dispose()
     appUpdates?.dispose()
     autoPull?.dispose()

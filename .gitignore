@@ -6,3 +6,4 @@ dist/
 out/
 vendor/remote/windows-x64/
 release-output/
+test-output/

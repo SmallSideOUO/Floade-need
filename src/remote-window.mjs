@@ -10,7 +10,10 @@ export function createRemoteWindow({ BrowserWindow, ipcMain, shell, service, app
   ipcMain.handle('remote:close', event => { if (event.sender === window?.webContents) window.close() })
   ipcMain.handle('remote:legal', event => { if (event.sender === window?.webContents) return shell.openExternal('https://github.com/SmallSideOUO/Floade-need/blob/main/THIRD-PARTY-NOTICES.md') })
   return view => {
-    if (window && !window.isDestroyed()) { window.show(); window.focus(); window.webContents.send('remote:view', view || 'connect'); return }
+    if (window && !window.isDestroyed()) {
+      if (window.isMinimized()) window.restore()
+      window.show(); window.focus(); window.webContents.send('remote:view', view || 'connect'); return
+    }
     window = new BrowserWindow({ width: 650, height: 760, minWidth: 560, minHeight: 580, title: 'Floade 遠端', icon: icon(),
       backgroundColor: '#0d0d0f', frame: false, show: false,
       webPreferences: { preload: path.join(appPath, 'src', 'remote-preload.cjs'), contextIsolation: true, nodeIntegration: false, sandbox: true } })

@@ -72,6 +72,21 @@
 
         <article class="setting-card">
           <div class="setting-copy">
+            <h2 data-i18n="settings.windowPinShortcut">視窗置頂快捷鍵</h2>
+            <p data-i18n="settings.windowPinShortcutDescription">將目前操作的任何視窗置頂，再按一次取消。預設 Ctrl + Alt + T，可在此改鍵。結束 Floade 時會取消本次設定的置頂。</p>
+          </div>
+          <div class="shortcut-row">
+            <button id="window-pin-record" class="shortcut" type="button">
+              <span id="window-pin-shortcut-value" data-i18n="settings.unset">尚未設定</span>
+              <small id="window-pin-shortcut-hint" data-i18n="settings.record">點擊後錄製</small>
+            </button>
+            <button id="clear-window-pin-shortcut" class="secondary" type="button" data-i18n="settings.clear">清除</button>
+          </div>
+          <p id="window-pin-shortcut-status" class="status" aria-live="polite"></p>
+        </article>
+
+        <article class="setting-card">
+          <div class="setting-copy">
             <h2 data-i18n="settings.translationShortcut">OCR 畫面翻譯</h2>
             <p data-i18n="settings.translationShortcutDescription">按下快捷鍵後拖曳框選文字；本機 OCR 完成後交給 Google 自動翻譯。</p>
           </div>

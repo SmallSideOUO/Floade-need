@@ -1,6 +1,6 @@
 {
   "name": "floade-local-data",
-  "version": "0.1.36",
+  "version": "0.1.40",
   "private": true,
   "type": "module",
   "description": "Floade floating workspace, Work Map and remote desktop.",
@@ -32,8 +32,9 @@
     "dist": "electron-builder",
     "dist:win": "electron-builder --win nsis",
     "screenshots": "electron scripts/capture-screenshots.mjs",
-    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/markdown-document.mjs && node --check src/push-folder.mjs && node --check src/git-identity.mjs && node --check src/i18n-main.mjs && node --check src/i18n-renderer.js && node --check src/screen-translator.mjs && node --check src/capture-overlay.js && node --check src/capture-overlay-preload.cjs && node --check src/translation-result.js && node --check src/translation-result-preload.cjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js && node --check src/preview-picker.js && node --check src/preview-picker-preload.cjs && node --check src/markdown-preview.js && node --check src/markdown-preview-preload.cjs && node --check src/settings.js && node --check src/settings-preload.cjs && node --check scripts/capture-screenshots.mjs && node --check scripts/screenshot-preload.cjs && node --check scripts/test-preview.cjs && node --check scripts/test-preview.mjs && node --check src/voice-service.mjs && node --check src/translation-languages.js && node --check src/translation-extras.js && node --check src/local-api.mjs && node --check src/local-api-client.mjs && node --check src/floating-launcher.mjs && node --check src/floating-launcher.js && node --check src/floating-launcher-preload.cjs && node --check src/launcher-layout.mjs && node --check src/launcher-files.mjs && node --check src/markdown-assets.mjs && node --check src/markdown-renderer.js && node --check src/pull-folder.mjs && node --check mobile/app.js && node --check mobile/github.js && node --check mobile/store.js && node --check mobile/sw.js && node --check scripts/build-mobile.mjs && node --check src/app-updater.mjs && node --check src/remote-windows-service.mjs && node --check src/remote-service.mjs && node --check src/remote-profile.mjs && node --check src/remote-auto-connect.mjs && node --check src/remote-engine-supervisor.mjs && node --check src/remote-window.mjs && node --check src/remote.js && node --check src/remote-preload.cjs",
-    "build:mobile": "node scripts/build-mobile.mjs"
+    "check": "node --check bin/floade.mjs && node --check src/main.mjs && node --check src/markdown-document.mjs && node --check src/push-folder.mjs && node --check src/git-identity.mjs && node --check src/i18n-main.mjs && node --check src/i18n-renderer.js && node --check src/screen-translator.mjs && node --check src/capture-overlay.js && node --check src/capture-overlay-preload.cjs && node --check src/translation-result.js && node --check src/translation-result-preload.cjs && node --check src/delete-dialog.js && node --check src/link-dialog.js && node --check src/toast.js && node --check src/preview-picker.js && node --check src/preview-picker-preload.cjs && node --check src/markdown-preview.js && node --check src/markdown-preview-preload.cjs && node --check src/settings.js && node --check src/settings-preload.cjs && node --check scripts/capture-screenshots.mjs && node --check scripts/screenshot-preload.cjs && node --check scripts/test-preview.cjs && node --check scripts/test-preview.mjs && node --check src/voice-service.mjs && node --check src/translation-languages.js && node --check src/translation-extras.js && node --check src/local-api.mjs && node --check src/local-api-client.mjs && node --check src/floating-launcher.mjs && node --check src/floating-launcher.js && node --check src/floating-launcher-preload.cjs && node --check src/launcher-layout.mjs && node --check src/launcher-files.mjs && node --check src/markdown-assets.mjs && node --check src/markdown-renderer.js && node --check src/pull-folder.mjs && node --check mobile/app.js && node --check mobile/github.js && node --check mobile/store.js && node --check mobile/sw.js && node --check scripts/build-mobile.mjs && node --check src/app-updater.mjs && node --check src/remote-windows-service.mjs && node --check src/remote-service.mjs && node --check src/remote-profile.mjs && node --check src/remote-auto-connect.mjs && node --check src/remote-engine-supervisor.mjs && node --check src/remote-window.mjs && node --check src/remote.js && node --check src/remote-preload.cjs && node --check src/window-pin.mjs && node --check scripts/test-window-pin.mjs",
+    "build:mobile": "node scripts/build-mobile.mjs",
+    "test:window-pin": "electron scripts/test-window-pin.cjs"
   },
   "dependencies": {
     "dompurify": "^3.4.16",
@@ -89,7 +90,8 @@
       "artifactName": "Floade-Setup-${version}.${ext}"
     },
     "asarUnpack": [
-      "src/voice-worker.ps1"
+      "src/voice-worker.ps1",
+      "src/window-pin-worker.ps1"
     ],
     "extraFiles": [
       {
@@ -103,6 +105,14 @@
       {
         "from": "docs/remote.md",
         "to": "Remote-API.md"
+      },
+      {
+        "from": "docs/file-transfer.md",
+        "to": "File-Transfer-API.md"
+      },
+      {
+        "from": "docs/split-video.md",
+        "to": "Split-Video.md"
       }
     ],
     "publish": [

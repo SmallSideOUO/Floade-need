@@ -26,6 +26,14 @@ In 0.1.29, the controller rereads saved remote preferences/devices before reques
 
 ## Local API
 
+### Manual high-speed network / gaming presets (candidate)
+
+Remote settings → Picture and performance offers 60, 90 and 120 FPS buttons. They fill the existing FPS, quality (70), H.264, GPU presentation and hardware codec fields; Save is still required. They preserve transport selection, permissions, credentials and the relative mouse shortcut. Display changes apply to new connections and do not reconnect or alter the established session. Resolution is not changed automatically: choose 1080p on the remote computer first when testing 120 FPS. Actual performance depends on capture, both devices' hardware, display refresh rate, resolution and network.
+
+The corresponding native candidate handles independent mouse-button transitions in both absolute and manual relative mode, including the second button of a left/right chord. The low-latency queue presentation budget follows the requested FPS up to 120 instead of a fixed 16 ms interval. Existing congestion/FPS protection remains active. No game detection or automatic relative-mode switching is added. `remote.metrics` native samples retain `presented_fps` for UI submissions and add `decode_capacity_fps`; neither confirms physical screen refresh or input-to-display latency.
+
+Netflix and other protected video can appear as a black video rectangle while browser controls and the desktop remain visible. Windows Desktop Duplication protects video content from capture ([Microsoft documentation](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/desktop-duplication-api)); FPS, codec and picture-quality settings cannot restore pixels already masked by the operating system. This candidate does not claim protected-video streaming support. Play Netflix directly on the viewing laptop for supported local playback; no browser setting is changed by these presets.
+
 Call api.describe for the authoritative list. remote.settings.get redacts remembered credentials. remote.password.temporary is the explicit operation that reveals the temporary password. Authentication, password checks and local approval remain enforced by RustDesk.
 
 ## Favorite devices (0.1.27)

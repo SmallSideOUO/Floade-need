@@ -1,5 +1,9 @@
 # Floade
 
+Version 0.1.40 adds a floating file-transfer shelf: drop multiple files or folders to register their source paths, then drag items from a saved computer's shelf into Explorer on the receiving computer. Transfers use authenticated direct P2P, retain resumable partial data and verify file contents. Both computers need this version running. The same operations are available to AI through `transfers.*`; see [file transfer and API](docs/file-transfer.md). Markdown windows also remember their dimensions separately for each document.
+
+On Windows, **Ctrl + Alt + T** toggles always-on-top for the active window in any app. Change or clear the shortcut in Settings. Quitting Floade restores windows pinned during the session.
+
 Version 0.1.27 adds favorite remote devices: save a home computer with a Windows-protected password once, then connect or transfer files with one click. Favorites support names and credential updates and persist independently of recent connections. Full access and Windows administrator/login-screen support require one-time setup on the receiving computer. The floating dot places Remote below Add folder. See [remote setup and API](docs/remote.md) and [source/license notices](THIRD-PARTY-NOTICES.md). This integrated distribution is AGPL-3.0; previous MIT notices remain in LICENSE-MIT.
 
 [English](README.md) | [繁體中文](README.zh-TW.md)
@@ -121,6 +125,8 @@ Hover over the floating ball, or click it to focus the panel:
 3. Select **Push** on its folder card.
 
 The tray's right-click menu offers **Settings**, **Show/Hide floating ball**, **Check for app updates** and **Quit**. Drag the ball to reposition it. Click a folder's name or arrow to expand its Markdown files, then click a file to open it directly. Click the folder again to collapse it. Search also finds files across folders. You can also use **Quit** at the bottom of the panel or `floade stop` to exit. Quit saves open documents first; a file conflict or active folder operation pauses the quit.
+
+Hovering leaves keyboard focus with the current app; pressing inside the panel activates it for that same click. Quick actions start before the panel hides, and a failed launch reopens the panel with an error that stays visible until retry. Work Map launches as a visible interactive application. Remote, Settings, Markdown editors and preview pickers restore their existing minimized window when reopened. Work Map and text translation already restore their existing windows.
 
 ### App updates
 

@@ -18,7 +18,7 @@ test('Work Map launches a separate process in development and installed builds',
       queueMicrotask(() => child.emit('spawn'))
       return child
     } })
-    assert.deepEqual(call, ['Floade.exe', [...(isPackaged ? [] : ['C:/Floade']), '--work-map'], { detached: true, stdio: 'ignore', windowsHide: true }])
+    assert.deepEqual(call, ['Floade.exe', [...(isPackaged ? [] : ['C:/Floade']), '--work-map'], { detached: true, stdio: 'ignore', windowsHide: false }])
     assert.equal(detached, true)
   }
   await assert.rejects(openWorkMap({ isPackaged: true, spawnProcess: () => {

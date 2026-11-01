@@ -1,6 +1,9 @@
 (() => {
   const messages = {
     en: {
+      'launcher.fileTransfer': 'File transfer',
+      'settings.windowPinShortcut': 'Always on top shortcut',
+      'settings.windowPinShortcutDescription': 'Pin the active window from any app; press again to unpin. Default: Ctrl + Alt + T. Change it here. Quitting Floade restores windows pinned during this session.',
       'launcher.remote': 'Remote', 'settings.remoteDescription': 'Device code, passwords, permissions, picture quality and servers.', 'settings.openRemote': 'Remote settings',
       'settings.appUpdates': 'Floade app updates', 'settings.appUpdatesDescription': 'Automatically check and download stable releases. Choose when to restart and install.',
       'update.check': 'Check for app updates', 'update.restart': 'Restart and update', 'update.version': 'Version {version} · Stable channel', 'update.idle': 'Checks automatically at startup and every six hours.', 'update.checking': 'Checking for app updates…', 'update.downloading': 'Downloading {version}… {percent}%', 'update.current': 'Floade is up to date.', 'update.ready': 'Version {version} is ready to install.', 'update.installing': 'Restarting to install the update…', 'update.error': 'Could not update Floade. Check your connection and retry.', 'update.unsupported': 'App updates are available in the installed Windows version.',
@@ -40,6 +43,9 @@
       'language.zh-TW': 'Traditional Chinese', 'language.zh-CN': 'Simplified Chinese', 'language.en': 'English', 'language.ja': 'Japanese', 'language.ko': 'Korean', 'language.fr': 'French', 'language.de': 'German', 'language.es': 'Spanish', 'language.pt': 'Portuguese', 'language.it': 'Italian', 'language.ru': 'Russian', 'language.vi': 'Vietnamese', 'language.th': 'Thai', 'language.id': 'Indonesian'
     },
     'zh-TW': {
+      'launcher.fileTransfer': '檔案傳輸',
+      'settings.windowPinShortcut': '視窗置頂快捷鍵',
+      'settings.windowPinShortcutDescription': '將目前操作的任何視窗置頂，再按一次取消。預設 Ctrl + Alt + T，可在此改鍵。結束 Floade 時會取消本次設定的置頂。',
       'launcher.remote': '遠端', 'settings.remoteDescription': '裝置代碼、密碼、權限、畫面品質與伺服器。', 'settings.openRemote': '遠端設定',
       'settings.appUpdates': 'Floade 程式更新', 'settings.appUpdatesDescription': '自動檢查及下載穩定版，準備好後由你選擇重新啟動並安裝。',
       'update.check': '檢查程式更新', 'update.restart': '重新啟動並更新', 'update.version': '版本 {version} · 穩定版通道', 'update.idle': '啟動後及每六小時自動檢查。', 'update.checking': '正在檢查程式更新…', 'update.downloading': '正在下載 {version}… {percent}%', 'update.current': 'Floade 已是最新版本。', 'update.ready': '{version} 版已準備好，可重新啟動安裝。', 'update.installing': '正在重新啟動並安裝更新…', 'update.error': '無法更新 Floade，請確認網路後重試。', 'update.unsupported': '程式更新功能僅適用 Windows 安裝版。',

@@ -1,5 +1,8 @@
 # Floade local API
 
+Floade 0.1.40 adds a shared P2P file shelf and resumable receiving jobs under `transfers.*`.
+See [File transfer](file-transfer.md) for floating drag-and-drop and AI API usage.
+
 Floade 0.1.22 also provides password-authenticated remote desktop through `remote.*`. Call `api.describe` for supported methods, or see [Remote API](remote.md). The installer includes `Remote-API.md`. Read settings with `remote.settings.get`, connect with `remote.connect`, and inspect native measurements with `remote.metrics`; shared-channel delay is not input-to-display latency. Remembered credentials are redacted from ordinary responses.
 
 For structured remote parameters, use `floade-api.ps1 -Method remote.settings.update -ParamsJson '{"settings":{"fps":60,"quality":70,"gpu":true}}'`. Password parameters are write-only; supply them from an in-memory secure prompt instead of putting passwords into command history. The source CLI supports `--params <JSON>` for nonsecret structured parameters.

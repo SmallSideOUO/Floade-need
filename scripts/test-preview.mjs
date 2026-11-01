@@ -19,7 +19,20 @@ app.setName('floade-preview-qa')
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms))
 const results = []
 const loginWrites = []
+// Isolate QA shortcuts from the installed app and the user's desktop shortcuts.
+const qaShortcuts = new Map()
+globalThis.previewShortcuts = {
+  register(shortcut, callback) {
+    if (qaShortcuts.has(shortcut)) return false
+    qaShortcuts.set(shortcut, callback)
+    return true
+  },
+  unregister: shortcut => qaShortcuts.delete(shortcut),
+  unregisterAll: () => qaShortcuts.clear()
+}
 const workMapRequests = []
+const workMapLaunchStates = []
+let failWorkMapLaunch = false
 const floadeCutRequests = []
 let remoteSample = { fresh: true, direct: true, presented_fps: { 1: 57 }, sample_unix_ms: Date.now() }
 const remoteCalls = []
@@ -33,7 +46,11 @@ globalThis.previewRemoteFactory = options => {
   return { ...service, dispatch: (method, params) => method === 'remote.start' && remoteStartupFails ? Promise.reject(Object.assign(Error('Remote engine did not become ready in time.'), { apiCode: 'REMOTE_START_FAILED' })) : method === 'remote.metrics'
     ? Promise.resolve({ samples: [remoteSample] }) : method === 'remote.status' ? service.dispatch(method, params).then(status => ({ ...status, automatic: remoteAutomatic })) : service.dispatch(method, params) }
 }
-globalThis.previewOpenWorkMap = async options => { workMapRequests.push(options) }
+globalThis.previewOpenWorkMap = async options => {
+  workMapRequests.push(options)
+  workMapLaunchStates.push(globalThis.previewQA.getLauncher().panel.__qaShown === true)
+  if (failWorkMapLaunch) throw Error('Work Map launch fixture failed')
+}
 globalThis.previewOpenFloadeCut = async options => { floadeCutRequests.push(options) }
 globalThis.previewLoginSettings = options => loginWrites.push(options)
 const originalFetch = globalThis.fetch
@@ -55,6 +72,9 @@ const hideQAWindow = (_event, window) => {
   const nativeHide = window.hide.bind(window)
   window.hide = () => { window.__qaShown = false; nativeHide() }
   window.focus = () => { window.__qaSkipTaskbar = false; window.emit('focus') }
+  const nativeIsMinimized = window.isMinimized.bind(window)
+  window.isMinimized = () => window.__qaMinimized ?? nativeIsMinimized()
+  window.restore = () => { window.__qaMinimized = false }
   window.webContents.setBackgroundThrottling(false)
 }
 app.on('browser-window-created', hideQAWindow)
@@ -81,12 +101,14 @@ globalThis.previewVoiceFactory = options => {
 // Instrument a temporary copy of the real main process. No test hooks are
 // shipped in the app, and no user's profile, folder or control pipe is used.
 let source = await fs.readFile(path.join(root, 'src', 'main.mjs'), 'utf8')
+source = source.replaceAll('globalShortcut.', 'globalThis.previewShortcuts.')
 source = source.replace(/from '(\.\/[^']+)'/g, (_match, relative) =>
   `from '${pathToFileURL(path.join(root, 'src', relative)).href}'`)
 assert.ok(source.includes('  app.whenReady().then(() => {'))
 source = source.replace('floade-local-data-control', `floade-preview-qa-${process.pid}`)
 assert.ok(source.includes('remoteService = createRemoteService({'))
 source = source.replace('remoteService = createRemoteService({', 'remoteService = globalThis.previewRemoteFactory({')
+source = source.replace('fileTransfer = createFileTransfer({', 'fileTransfer = createFileTransfer({ port: 0,')
 source = source.replace('    loadFolders()', '    folders = [{ path: globalThis.previewApiFolder, repo: null }]')
 const realApiCommand = 'command: (program, args) => execFileAsync(program, args, { windowsHide: true, timeout: 30000, maxBuffer: 10 * 1024 * 1024 })'
 assert.ok(source.includes(realApiCommand))
@@ -115,7 +137,8 @@ try {
   const apiCall = (method, params = {}) => requestLocalApi({ method, params }, { socketPath: apiSocket })
   const folderState = () => previewQA.readLauncherData().folders.find(folder => folder.path === globalThis.previewApiFolder)
   const describedMethods = (await apiCall('api.describe')).result.methods
-  assert.deepEqual(Object.keys(describedMethods).filter(method => !method.startsWith('remote.')), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.deepEqual(Object.keys(describedMethods).filter(method => !method.startsWith('remote.') && !method.startsWith('transfers.')), ['api.describe', 'app.status', 'folders.list', 'repositories.list', 'folders.link'])
+  assert.ok(describedMethods['transfers.offer'] && describedMethods['transfers.receive'])
   assert.ok(describedMethods['remote.connect'] && describedMethods['remote.settings.update'])
   assert.equal((await apiCall('communication.status')).error.code, 'METHOD_NOT_FOUND')
   assert.equal(previewQA.buildTrayMenu().items.length, 5)
@@ -154,13 +177,47 @@ try {
   const runPanel = code => launcher.panel.webContents.executeJavaScript(code)
   await until(() => runBall('Boolean(window.floadeLauncher)'))
   await until(() => runPanel('Boolean(window.floadeLauncher)'))
-  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 6)
+  assert.equal(await runPanel('document.querySelectorAll(".quick-actions button").length'), 7)
   assert.equal(await runPanel('document.querySelector("#add-folder").nextElementSibling.id'), 'remote')
-  assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'work-map')
+  assert.equal(await runPanel('document.querySelector("#screen-translate").nextElementSibling.id'), 'file-transfer')
+  await runPanel('document.querySelector("#file-transfer").click()')
+  await until(() => runPanel('!document.querySelector("#transfer-pane").hidden && document.querySelector("#transfer-status").textContent.length > 0'))
+  const transferFixture = await runPanel(`window.floadeLauncher.transfer('transfers.offer', { paths: [${JSON.stringify(path.join(globalThis.previewApiFolder, 'note.md'))}] })`)
+  assert.equal(transferFixture.ok, true)
+  await until(() => runPanel('document.querySelectorAll(".transfer-offer").length === 1'))
+  assert.equal(await runPanel('document.querySelector(".transfer-offer").draggable'), true)
+  const transferLayout = await runPanel(`(() => { const b=document.querySelector('#file-transfer').getBoundingClientRect(), a=document.querySelector('#text-translate').getBoundingClientRect(), c=document.querySelector('#screen-translate').getBoundingClientRect(); return {wide:b.width>a.width+c.width,below:b.top>=Math.max(a.bottom,c.bottom)} })()`)
+  assert.deepEqual(transferLayout, { wide: true, below: true })
+  await runPanel('document.querySelector("#file-transfer").click()')
+  results.push('wide file-transfer button sits below both translations; the real shelf API adds a draggable offer without downloading contents')
   await until(() => runPanel('document.querySelector("#work-map img").naturalWidth > 0'))
-  await runPanel('document.querySelector("#work-map").click()')
+  await launcher.showPanel()
+  const hoverPanelBounds = launcher.panel.getBounds()
+  globalThis.previewCursor = { x: hoverPanelBounds.x + 40, y: hoverPanelBounds.y + 40 }
+  launcher.panel.emit('focus')
+  launcher.panel.emit('blur')
+  assert.equal(launcher.panel.__qaShown, true, 'activation blur under the pointer must not eat the first hover click')
+  const workMapClick = await runPanel(`(() => { const b = document.querySelector('#work-map').getBoundingClientRect(); return { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + b.height / 2) } })()`)
+  globalThis.previewCursor = { x: hoverPanelBounds.x + workMapClick.x, y: hoverPanelBounds.y + workMapClick.y }
+  launcher.panel.webContents.focus()
+  launcher.panel.webContents.sendInputEvent({ type: 'mouseDown', ...workMapClick, button: 'left', clickCount: 1 })
+  launcher.panel.webContents.sendInputEvent({ type: 'mouseUp', ...workMapClick, button: 'left', clickCount: 1 })
   await until(() => Promise.resolve(workMapRequests.length === 1))
+  assert.equal(workMapLaunchStates[0], true, 'launch begins before the clicked panel gives up focus')
   assert.equal(workMapRequests[0].appPath, root)
+  assert.equal(launcher.panel.__qaShown, false)
+  failWorkMapLaunch = true
+  await launcher.showPanel()
+  await runPanel('document.querySelector("#work-map").click()')
+  await until(() => runPanel('document.querySelector("#status").textContent === "Work Map launch fixture failed"'))
+  assert.equal(launcher.panel.__qaShown, true, 'failed launches keep their error visible')
+  await launcher.refreshData()
+  await wait(100)
+  assert.equal(await runPanel('document.querySelector("#status").textContent'), 'Work Map launch fixture failed')
+  failWorkMapLaunch = false
+  await runPanel('document.querySelector("#work-map").click()')
+  await until(() => Promise.resolve(workMapRequests.length === 3))
+  results.push('First hover click launches Work Map before hiding; activation blur preserves the click and failures stay visible for retry')
   assert.equal(await runPanel(`(() => {
     const map = document.querySelector('#work-map').getBoundingClientRect()
     const cut = document.querySelector('#floade-cut').getBoundingClientRect()
@@ -180,6 +237,12 @@ try {
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('remote.html'))))
   const remoteWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('remote.html'))
   const runRemote = code => remoteWindow.webContents.executeJavaScript(code)
+  remoteWindow.__qaMinimized = true
+  await launcher.showPanel()
+  await runPanel('document.querySelector("#remote").click()')
+  await until(() => Promise.resolve(remoteWindow.__qaMinimized === false))
+  assert.equal(BrowserWindow.getAllWindows().filter(window => window.webContents.getURL().includes('remote.html')).length, 1)
+  results.push('A single Remote click restores the existing minimized window without creating another window')
   await until(() => runRemote('document.querySelector("#relativeMouseShortcut").value === "Ctrl+Alt"'))
   await until(() => runRemote('document.querySelector("#device-id").textContent === "123456789"'))
   await until(() => runRemote('document.querySelector("#message").textContent.includes("已恢復")'))
@@ -190,6 +253,23 @@ try {
   assert.equal(remoteCalls.filter(call => call.method === 'apply').at(-1).params.settings.relativeMouseShortcut, 'Ctrl+Alt+M')
   await runRemote(`document.querySelector('#reset-relative-shortcut').click(); document.querySelector('#settings-form').requestSubmit()`)
   await until(async () => (await apiCall('remote.settings.get')).result.settings.relativeMouseShortcut === 'Ctrl+Alt')
+  const beforeGamePreset = (await apiCall('remote.settings.get')).result.settings
+  const callsBeforeGamePreset = remoteCalls.length
+  for (const fps of [60, 90, 120]) {
+    await runRemote(`document.querySelector('[data-game-fps="${fps}"]').click()`)
+    assert.deepEqual(await runRemote('["fps", "quality", "codec"].map(id => document.getElementById(id).value)'), [String(fps), '70', 'h264'])
+    assert.deepEqual(await runRemote('["gpu", "hardwareCodec"].map(id => document.getElementById(id).checked)'), [true, true])
+  }
+  assert.deepEqual((await apiCall('remote.settings.get')).result.settings, beforeGamePreset)
+  assert.equal(remoteCalls.slice(callsBeforeGamePreset).some(call => ['apply', 'connect', 'disconnect'].includes(call.method)), false)
+  await runRemote('document.querySelector("#settings-form").requestSubmit()')
+  await until(async () => (await apiCall('remote.settings.get')).result.settings.fps === 120)
+  assert.equal(remoteCalls.filter(call => call.method === 'apply').at(-1).params.settings.fps, 120)
+  const afterGamePreset = (await apiCall('remote.settings.get')).result.settings
+  for (const key of ['connectionMode', 'tcpPunch', 'udpPunch', 'webrtc', 'relativeMouseShortcut']) assert.equal(afterGamePreset[key], beforeGamePreset[key])
+  results.push('Manual 60/90/120 FPS gaming presets require Save and preserve connection and mouse settings')
+  await apiCall('remote.settings.update', { settings: beforeGamePreset })
+  await runRemote('refreshSettings()')
   await runRemote(`document.querySelector('[data-view="connect"]').click()`)
   await until(() => runRemote('document.querySelector("#network-profile").textContent.includes("僅限直連")'))
   assert.equal(await runRemote('Boolean(document.querySelector("#forceRelay, #relayServer"))'), false)
@@ -415,6 +495,9 @@ try {
   await fs.writeFile(file, 'original\n')
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
   const window = [...previewQA.previewWindows.values()][0]
+  window.__qaMinimized = true
+  await previewQA.openMarkdownPreview(temporary, 'sample.md')
+  assert.equal(window.__qaMinimized, false)
   window.webContents.on('preload-error', (_event, _preload, error) => console.error('Preload:', error))
   window.webContents.on('console-message', event => console.error('Renderer:', event.message))
   const run = code => window.webContents.executeJavaScript(code)
@@ -429,6 +512,24 @@ try {
   const text = () => run('document.querySelector("#editor").value')
   const input = value => run(`document.querySelector('#editor').value = ${JSON.stringify(value)}; document.querySelector('#editor').dispatchEvent(new Event('input'))`)
   await until(async () => await text() === 'original\n')
+  const documentArea = screen.getPrimaryDisplay().workAreaSize
+  window.setSize(Math.min(1080, documentArea.width), Math.min(720, documentArea.height))
+  const { width: chosenWidth, height: chosenHeight } = window.getBounds()
+  const chosenDocumentSize = { width: chosenWidth, height: chosenHeight }
+  const documentSizeKey = process.platform === 'win32' ? file.toLowerCase() : file
+  await until(async () => {
+    const size = JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).documentWindowSizes?.[documentSizeKey]
+    return size?.width === chosenDocumentSize.width && size?.height === chosenDocumentSize.height
+  })
+  await fs.writeFile(path.join(temporary, 'other-size.md'), 'Independent size\n')
+  await previewQA.openMarkdownPreview(temporary, 'other-size.md')
+  const otherSizeWindow = [...previewQA.previewWindows.values()].find(item => item !== window)
+  await until(() => otherSizeWindow.webContents.executeJavaScript('document.querySelector("#editor")?.value === "Independent size\\n"'))
+  assert.ok(Math.abs(otherSizeWindow.getBounds().width - Math.min(820, documentArea.width)) <= 2)
+  assert.ok(Math.abs(otherSizeWindow.getBounds().height - Math.min(560, documentArea.height)) <= 2)
+  otherSizeWindow.close()
+  await until(() => Promise.resolve(previewQA.previewWindows.size === 1))
+  results.push('Markdown windows persist manually resized dimensions per file without changing other documents')
   const demoMarkdown = '# 即時預覽\n\n**粗體** 和 *斜體*\n\n- [x] 貼上截圖\n\n| 項目 | 狀態 |\n| --- | --- |\n| 圖片 | 已貼上 |\n\n```js\nconst hello = "Floade"\n```\n\n'
   await input(demoMarkdown)
   await until(() => run('document.querySelector("#rendered h1")?.textContent === "即時預覽"'))
@@ -525,23 +626,59 @@ try {
   await fs.writeFile(file, 'recreated\n')
   await until(async () => await text() === 'recreated\n')
   results.push('temporary deletion does not erase the editor; recreation reloads')
+  window.setSize(Math.min(990, documentArea.width), Math.min(650, documentArea.height))
+  const { width: closeWidth, height: closeHeight } = window.getBounds()
+  const closeSize = { width: closeWidth, height: closeHeight }
   window.close()
   await until(() => Promise.resolve(previewQA.previewFiles.size === 0))
   results.push('closing window disposes document polling')
+  assert.deepEqual(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).documentWindowSizes[documentSizeKey], closeSize)
+  previewQA.loadFolders()
   await fs.writeFile(file, imageMarkdown)
   await previewQA.openMarkdownPreview(temporary, 'sample.md')
   const imageReopened = [...previewQA.previewWindows.values()][0]
+  assert.ok(Math.abs(imageReopened.getBounds().width - closeSize.width) <= 2)
+  assert.ok(Math.abs(imageReopened.getBounds().height - closeSize.height) <= 2)
   await until(() => imageReopened.webContents.executeJavaScript('document.querySelector("#rendered img")?.naturalWidth === 400'))
   assert.equal(await imageReopened.webContents.executeJavaScript('document.querySelector("#workspace").dataset.view'), 'split')
   imageReopened.close()
   await until(() => Promise.resolve(previewQA.previewFiles.size === 0))
   results.push('reopening saved Markdown resolves the pasted image from disk and restores the chosen view mode')
+  results.push('closing immediately after resize flushes dimensions; reloading configuration and reopening restores them')
+  const oversizedConfig = JSON.parse(await fs.readFile(qaConfigPath, 'utf8'))
+  oversizedConfig.documentWindowSizes[documentSizeKey] = { width: 100000, height: 100000 }
+  oversizedConfig.documentWindowSizes.invalid = null
+  await fs.writeFile(qaConfigPath, JSON.stringify(oversizedConfig))
+  previewQA.loadFolders()
+  await previewQA.openMarkdownPreview(temporary, 'sample.md')
+  const fittedWindow = [...previewQA.previewWindows.values()][0]
+  await until(() => fittedWindow.webContents.executeJavaScript('Boolean(document.querySelector("#editor")?.value)'))
+  assert.ok(Math.abs(fittedWindow.getBounds().width - documentArea.width) <= 2)
+  assert.ok(Math.abs(fittedWindow.getBounds().height - documentArea.height) <= 2)
+  fittedWindow.close()
+  await until(() => Promise.resolve(previewQA.previewFiles.size === 0))
+  results.push('restored dimensions fit the current display and invalid saved sizes are ignored')
 
   await runPanel('window.floadeLauncher.action("settings")')
   await until(() => Promise.resolve(BrowserWindow.getAllWindows().some(window => window.webContents.getURL().includes('settings.html'))))
   const startupWindow = BrowserWindow.getAllWindows().find(window => window.webContents.getURL().includes('settings.html'))
+  startupWindow.__qaMinimized = true
+  await runPanel('window.floadeLauncher.action("settings")')
+  await until(() => Promise.resolve(startupWindow.__qaMinimized === false))
+  results.push('Settings and Markdown entries restore their existing minimized windows in one invocation')
   const runSettings = code => startupWindow.webContents.executeJavaScript(code)
   await until(() => runSettings('Boolean(window.floadeSettings && document.querySelector("#start-at-login").checked)'))
+  assert.match(await runSettings('document.querySelector("#window-pin-shortcut-value").textContent'), /Ctrl \+ Alt \+ T/)
+  const pinShortcut = await runSettings('window.floadeSettings.setWindowPinShortcut("CommandOrControl+Alt+F9")')
+  assert.equal(pinShortcut.success, true)
+  assert.equal(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.windowPinShortcut, 'CommandOrControl+Alt+F9')
+  const pinConflict = await runSettings('window.floadeSettings.setWindowPinShortcut("Alt+Shift+T")')
+  assert.equal(pinConflict.success, false)
+  assert.equal(pinConflict.shortcut, 'CommandOrControl+Alt+F9')
+  assert.equal((await runSettings('window.floadeSettings.setWindowPinShortcut(null)')).success, true)
+  assert.equal(JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.windowPinShortcut, null)
+  assert.equal((await runSettings('window.floadeSettings.setWindowPinShortcut("CommandOrControl+Alt+T")')).success, true)
+  results.push('window pin settings show the default shortcut, persist changes and disabling, and retain the previous shortcut on conflict')
   await runSettings('document.querySelector("#start-at-login").checked = false; document.querySelector("#start-at-login").dispatchEvent(new Event("change"))')
   await until(async () => JSON.parse(await fs.readFile(qaConfigPath, 'utf8')).settings.startAtLogin === false)
   assert.equal(loginWrites.at(-1).openAtLogin, false)

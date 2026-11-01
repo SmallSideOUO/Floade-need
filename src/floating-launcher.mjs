@@ -2,7 +2,7 @@ import { BrowserWindow, ipcMain, screen } from 'electron'
 import path from 'node:path'
 import { ballSize, clampBall, placePanel, containsPoint } from './launcher-layout.mjs'
 
-export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, mutateDocument, action, saveVisible, savePosition, saveSize, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
+export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacity, getState, readData, openDocument, mutateDocument, action, transfer, dragFiles, transferState, saveVisible, savePosition, saveSize, onVisibilityChange, cursor = () => screen.getCursorScreenPoint() }) {
   let visible = getState().visible
   let keyboardMode = false
   let desiredPanel = false
@@ -132,6 +132,19 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
     }
   })
   handle('launcher:close', event => { if (fromPanel(event)) hidePanel() })
+  handle('launcher:transfer', async (event, method, params) => {
+    if (!fromPanel(event) || !transfer) return { ok: false }
+    try { return { ok: true, result: await transfer(method, params) } }
+    catch (error) { return { ok: false, message: error.message } }
+  })
+  const onTransferDrag = (event, deviceId, offerIds) => {
+    if (!fromPanel(event) || !dragFiles) return
+    interacting = true; clearTimeout(closeTimer)
+    void Promise.resolve().then(() => dragFiles(deviceId, offerIds, panel)).catch(error => {
+      if (!disposed) panel.webContents.send('launcher:error', error.message)
+    }).finally(() => { interacting = false; if (!disposed) scheduleClose() })
+  }
+  ipcMain.on('launcher:transfer-drag', onTransferDrag)
   handle('launcher:resize', (event, height) => {
     if (!fromPanel(event) || !Number.isFinite(height)) return
     if (manualSize || resizing) return
@@ -177,11 +190,29 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   })
   handle('launcher:action', async (event, name, folderPath) => {
     if (!fromPanel(event)) return { ok: false }
-    if (name !== 'push') hidePanel()
-    try { await action(name, folderPath); return { ok: true } } catch (error) { return { ok: false, message: error.message } }
+    try {
+      const pending = action(name, folderPath)
+      if (name !== 'push') hidePanel()
+      await pending
+      return { ok: true }
+    } catch (error) {
+      await showPanel(true)
+      return { ok: false, message: error.message }
+    }
+  })
+  panel.webContents.on('before-mouse-event', (_event, mouse) => {
+    if (mouse.type === 'mouseDown' && desiredPanel && !disposed) {
+      clearTimeout(closeTimer)
+      panel.focus()
+    }
   })
   panel.on('focus', () => { if (desiredPanel) { keyboardMode = true; clearTimeout(closeTimer) } })
-  panel.on('blur', () => { if (keyboardMode && !interacting && !resizing && !nativeSizing) hidePanel() })
+  panel.on('blur', () => {
+    if (keyboardMode && !interacting && !resizing && !nativeSizing) {
+      if (containsPoint(panel.getBounds(), cursor())) { keyboardMode = false; scheduleClose() }
+      else hidePanel()
+    }
+  })
   panel.on('close', event => { if (!disposed) { event.preventDefault(); hidePanel() } })
   const onDisplayChange = () => {
     if (disposed) return
@@ -194,11 +225,13 @@ export function createFloatingLauncher({ appPath, iconPath, getLocale, getOpacit
   screen.on('display-metrics-changed', onDisplayChange)
   return {
     ball, panel, showPanel, hidePanel, refreshData, setVisible, isVisible: () => visible,
+    refreshTransfers: () => { if (!disposed && transferState && !panel.webContents.isDestroyed()) panel.webContents.send('launcher:transfers', transferState()) },
     dispose() {
       disposed = true
       clearTimeout(closeTimer)
       clearTimeout(hoverTimer)
       for (const name of handlers) ipcMain.removeHandler(name)
+      ipcMain.removeListener('launcher:transfer-drag', onTransferDrag)
       screen.removeListener('display-removed', onDisplayChange)
       screen.removeListener('display-metrics-changed', onDisplayChange)
       if (!ball.isDestroyed()) ball.destroy()
